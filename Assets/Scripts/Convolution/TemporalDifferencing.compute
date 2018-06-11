@@ -1,0 +1,30 @@
+﻿#pragma kernel CSToGray
+
+
+Texture2D<float4> RetinaTex;
+RWTexture2D<float4> OutputTex;
+RWStructuredBuffer<float3> Buff;
+int Res;
+
+[numthreads(32, 32, 1)]
+void CSToGray(uint3 dtid : SV_DispatchThreadID)
+{
+	float4 c = RetinaTex[dtid.xy];
+	
+	// Grayscale
+	/*
+	float g = (c.x + c.y + c.z) * 0.3333;
+	int idx = dtid.x * Res + dtid.y;
+	float o = 0.5 + 0.5 * (g - Buff[idx]);
+	Buff[idx] = g;
+	*/
+
+	// Colour
+	int idx = dtid.x * Res + dtid.y;
+	float3 diff = c.xyz - Buff[idx];
+	float3 o = float3(0.5,0.5,0.5) + (1.0 * diff);
+	float w = saturate(pow(abs(diff), 0.6));
+	Buff[idx] = Buff[idx] * (1.0 - w) + w * c.xyz;
+
+	OutputTex[dtid.xy] = float4(o,1); 
+}
