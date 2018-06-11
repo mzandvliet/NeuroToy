@@ -2,6 +2,13 @@
 using Unity.Collections;
 using UnityEngine;
 
+/* 
+Todo:
+
+- One perceived problem right now is that randomly initialized networks don't seem
+to correspond to uniform distribution over the output classes. Investigate.
+ */
+
 public class MnistTraining : MonoBehaviour {
     private float[] _pixels;
     private int[] _labels;
