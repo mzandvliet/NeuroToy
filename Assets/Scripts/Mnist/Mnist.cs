@@ -43,9 +43,7 @@ public class Mnist {
 
     // Todo: since all training data is in memory, and is readonly, why even copy it? Just return
     // a random subset of indices
-    public static Batch GetBatch(int size, float[] pixels, int[] labels) {
-        var r = new System.Random();
-        
+    public static Batch GetBatch(int size, float[] pixels, int[] labels, System.Random r) {
         Batch b = new Batch(size);
         for (int i = 0; i < size; i++) {
             int randIndex = r.Next(Mnist.NumImgs);
@@ -74,6 +72,30 @@ public class Mnist {
 
         tex.SetPixels(0, 0, Rows, Cols, colors);
         tex.Apply(false);
+    }
+
+    public static void LabelToVector(int label, float[] vector) {
+        for (int i = 0; i < 10; i++) {
+            vector[i] = i == label ? 1f : 0f;
+        }
+    }
+
+    public static void Subtract(float[] a, float[] b, float[] result) {
+        if (a.Length != b.Length) {
+            throw new System.ArgumentException("Lengths of arrays have to match");
+        }
+
+        for (int i = 0; i < a.Length; i++) {
+            result[i] = a[i] - b[i];
+        }
+    }
+
+    public static float SumOfSquares(float[] vector) {
+        float sum = 0f;
+        for (int i = 0; i < vector.Length; i++) {
+            sum += vector[i] * vector[i];
+        }
+        return sum;
     }
 }
 

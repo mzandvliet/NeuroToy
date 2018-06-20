@@ -6,7 +6,8 @@ using UnityEngine;
 Todo:
 
 - One perceived problem right now is that randomly initialized networks don't seem
-to correspond to uniform distribution over the output classes. Investigate.
+to correspond to uniform distribution over the output classes. I suspect this
+has to do with suboptimal initialization strategy. Try Xavier or other.
  */
 
 public class MnistTraining : MonoBehaviour {
@@ -15,8 +16,11 @@ public class MnistTraining : MonoBehaviour {
     private Texture2D _tex;
 
     private int _currentIndex;
+    private System.Random _random;
 
     private void Awake() {
+        _random = new System.Random(1234);
+
         Mnist.Load(out _pixels, out _labels);
 
         _tex = new Texture2D(Mnist.Rows, Mnist.Cols, TextureFormat.ARGB32, false, true); // Lol
@@ -30,13 +34,18 @@ public class MnistTraining : MonoBehaviour {
             new LayerDefinition(10, LayerType.Deterministic, ActivationType.Sigmoid));
         var net = NetBuilder.Build(def);
 
-        NetUtils.Randomize(net, new System.Random(1234));
+        // Todo: Xavier initialization
+
+        NetUtils.Randomize(net, _random);
 
         TrainMinibatch(net);
     }
 
     private void TrainMinibatch(Network net) {
-        var batch = Mnist.GetBatch(16, _pixels, _labels);
+        var batch = Mnist.GetBatch(16, _pixels, _labels, _random);
+
+        var targetVector = new float[10];
+        var outputDelta = new float[10];
 
         for (int i = 0; i < batch.Labels.Length; i++) {
             // Copy image to input layer (TODO: again, this is unneccessary memory duplication)
@@ -47,8 +56,20 @@ public class MnistTraining : MonoBehaviour {
             NetUtils.Forward(net);
 
             int outputClass = NetUtils.GetMaxOutput(net);
-            Debug.Log("Target label: " + batch.Labels[i] + ", predicted: " + outputClass);
+            Mnist.LabelToVector(batch.Labels[i], targetVector);
+
+            // Calculate error between output layer and target
+            Mnist.Subtract(targetVector, net.Output, outputDelta);
+            float error = Mnist.SumOfSquares(outputDelta);
+
+            Debug.Log("Target label: " + batch.Labels[i] + ", predicted: " + outputClass + ", SoSError: " + error);
+
+            // Propagate error back
+
+            // Calculate per-parameter gradient, store it
         }
+
+        // Update weights and biases according to averaged gradient and learning rate 
     }
 
     private void Update() {
