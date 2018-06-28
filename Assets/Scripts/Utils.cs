@@ -4,7 +4,7 @@ using UnityEngine;
 public static class Utils {
     public const float Timestep = 0.016f;
     public const float Pi = 3.14159265359f;
-    public const float TwoPi = Pi * 2f;
+    public const float Tau = Pi * 2f;
     public const float RadToDeg = 180f / Pi;
 
 
@@ -78,7 +78,7 @@ public static class Utils {
     }
 
     public static float WrapAngle(float a) {
-        return a < 0 ? a + TwoPi : a > TwoPi ? a - TwoPi : a;
+        return a < 0 ? a + Tau : a > Tau ? a - Tau : a;
     }
 
     public static float AngleSigned(Vector2 a, Vector2 b) {

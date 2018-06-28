@@ -2,6 +2,8 @@
 using System.Text;
 using UnityEngine;
 
+/* Todo: load test and validation data, not just training. */
+
 public class Mnist {
     private const string Folder = "F:\\datasets\\mnist";
     private const string ImagePath = "train-images.idx3-ubyte";

@@ -48,7 +48,7 @@ public class MnistTraining : MonoBehaviour {
         var outputDelta = new float[10];
 
         for (int i = 0; i < batch.Labels.Length; i++) {
-            // Copy image to input layer (TODO: again, this is unneccessary memory duplication)
+            // Copy image to input layer
             for (int p = 0; p < Mnist.ImgDims; p++) {
                 net.Input[p] = batch.Images[i][p];
             }

@@ -139,15 +139,15 @@ public static class NetBuilder {
 }
 
 public class DeterministicWeightBiasLayer : ILayer {
-    private readonly float[] _a;
-    private readonly float[] _z;
+    private readonly float[] _a; // Non-linear activations
+    private readonly float[] _z; // Linear activations (kept for backpropagation)
     private readonly Func<float, float> _act;
 
     // Params
-    private readonly float[] _b;
-    private readonly float[,] _w;
+    private readonly float[] _b; // Biases
+    private readonly float[,] _w; // Weights
 
-    /* Abstract parameter access
+    /* Abstract parameter access for genetic algorithms
      * Todo: this way of flattening the params is not great, but
      * it has to be done somehow. */
 
@@ -200,10 +200,13 @@ public class DeterministicWeightBiasLayer : ILayer {
 
         for (int n = 0; n < _a.Length; n++) {
             float a = 0f;
+            // Dot inputs with weights
             for (int w = 0; w < input.Length; w++) {
                 a += input[w] * _w[n, w];
             }
+            // Linear activation is the above plus bias
             _z[n] = a + _b[n];
+            // Non-linear activation
             _a[n] = _act(_z[n]);
         }
 
@@ -211,6 +214,8 @@ public class DeterministicWeightBiasLayer : ILayer {
     }
 }
 
+/// Experiment in having noisy parameterization, a weight/bias are guassian
+/// distributions instead of real values
 public class StochasticWeightBiasLayer : ILayer {
     private readonly float[] _a;
     private readonly float[] _z;
@@ -219,10 +224,6 @@ public class StochasticWeightBiasLayer : ILayer {
     // Params
     private readonly float[,] _b;
     private readonly float[,] _w;
-
-    /* Abstract parameter access
-     * Todo: this way of flattening the params is not great, but
-     * it works for the genetic algorithm mutations. */
 
     public int ParamCount {
         get { return _b.Length + _w.GetLength(0) * _w.GetLength(1); }
@@ -299,6 +300,10 @@ public static class NetUtils {
         }
     }
 
+    public static void Backward(Network network) {
+        // Todo: implement
+    }
+
     public static int GetMaxOutput(Network network) {
         float largestActivation = float.MinValue;
         int idx = 0;
@@ -309,10 +314,6 @@ public static class NetUtils {
             }
         }
         return idx;
-    }
-
-    public static void Backward(Network network) {
-        // Todo: implement
     }
 
     public const float WMax = 1f;
