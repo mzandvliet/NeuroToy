@@ -99,13 +99,16 @@ public class MnistTraining : MonoBehaviour {
         }
 
         avgBatchCost /= (float)batchSize;
-        Debug.Log("Batch: " + _batchesTrained + ", Cost: " + avgBatchCost + ", Correct: " + correctLabels + "/" + batchSize);
+        DivideGradients(_gradientBucket, (float)batchSize);
+        //ClipGradients()
 
         // Update weights and biases according to averaged gradient and learning rate
-        DivideGradients(_net, (float)batchSize);
-        NetUtils.UpdateParameters(_net, _gradientBucket, 0.1f);
+        float rate = 0.3f / (1f + Mathf.Log(1f + (float)_batchesTrained, 8f));
+        NetUtils.UpdateParameters(_net, _gradientBucket, rate);
 
         _batchesTrained++;
+
+        Debug.Log("Batch: " + _batchesTrained + ", Cost: " + avgBatchCost + ", Correct: " + correctLabels + "/" + batchSize + " Rate: " + rate);
     }
 
     private static void ZeroGradients(Network bucket) {
@@ -136,6 +139,17 @@ public class MnistTraining : MonoBehaviour {
                 bucket.Layers[l].DCDZ[n] /= factor;
                 for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
                     bucket.Layers[l].DCDW[n, w] /= factor;
+                }
+            }
+        }
+    }
+
+    private static void ClipGradients(Network bucket) {
+        for (int l = 1; l < bucket.Layers.Count; l++) {
+            for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
+                bucket.Layers[l].DCDZ[n] = Mathf.Clamp(bucket.Layers[l].DCDZ[n], -1.0f, 1.0f);
+                for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
+                    bucket.Layers[l].DCDW[n, w] = Mathf.Clamp(bucket.Layers[l].DCDW[n, w], -1.0f, 1.0f); ;
                 }
             }
         }
