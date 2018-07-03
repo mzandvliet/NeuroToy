@@ -215,7 +215,7 @@ public class DeterministicWeightBiasLayer : ILayer {
     private readonly float[] _b; // Biases
     private readonly float[] _dCdZ; // Biases gradients
     private readonly float[,] _w; // Weights
-    private readonly float[,] _dWdC; // Weight gradietns
+    private readonly float[,] _dWdC; // Weight gradients
 
     /* Abstract parameter access for genetic algorithms
      * Todo: this way of flattening the params is not great, but
@@ -343,12 +343,25 @@ public static class NetUtils {
 
     public static void Backward(Network net, float[] target) {
         float[] dCdO = new float[target.Length];
-        Mnist.Subtract(target, net.Output, dCdO);
+        Mnist.Subtract(net.Output, target, dCdO);
 
         net.Layers[net.Layers.Count-1].BackwardFinal(net.Layers[net.Layers.Count - 2], dCdO);
 
         for (int l = net.Layers.Count-2; l > 0; l--) {
             net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
+        }
+    }
+
+    public static void StochasticParameterUpdate(Network net) {
+        float rate = 0.1f;
+        for (int l = 1; l < net.Layers.Count; l++) {
+            for (int n = 0; n < net.Layers[l].Count; n++) {
+                net.Layers[l].Biases[n] -= net.Layers[l].DCDZ[n] * rate;
+
+                for (int w = 0; w < net.Layers[l-1].Outputs.Length; w++) {
+                    net.Layers[l].Weights[n, w] -= net.Layers[l].DCDW[n, w] * rate;
+                }
+            }
         }
     }
 

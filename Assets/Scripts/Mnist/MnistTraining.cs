@@ -41,8 +41,6 @@ public class MnistTraining : MonoBehaviour {
         NetUtils.Randomize(_net, _random);
 
         _renderer.SetTarget(_net);
-
-        TrainMinibatch(_net);
     }
 
     private void TrainMinibatch(Network net) {
@@ -52,6 +50,7 @@ public class MnistTraining : MonoBehaviour {
         var dCdO = new float[10];
 
         // Todo: have a buffer in which to store minibatch gradients for averaging
+        // Needs code restructuring to make this easy to allocate
 
         for (int i = 0; i < batch.Labels.Length; i++) {
             // Copy image to input layer
@@ -74,6 +73,8 @@ public class MnistTraining : MonoBehaviour {
             // Calculate per-parameter gradient, store it
 
             NetUtils.Backward(net, target);
+
+            NetUtils.StochasticParameterUpdate(net);
         }
 
         // Update weights and biases according to averaged gradient and learning rate 
@@ -86,6 +87,10 @@ public class MnistTraining : MonoBehaviour {
         if (Input.GetKeyDown(KeyCode.A)) {
             Navigate(_currentIndex - 1);
         }
+
+        //if (Input.GetKeyDown(KeyCode.Space)) {
+            TrainMinibatch(_net);
+        //}
     }
 
     private void Navigate(int index) {
