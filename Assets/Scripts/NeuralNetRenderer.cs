@@ -57,16 +57,15 @@ public class NeuralNetRenderer : MonoBehaviour {
 
                 // If we have previous layer, draw connections from those neurons to
                 // The ones in the current layer
-                int XOffsetPrev = (biggestLayerSize - _net.Layers[l - 1].Count) / 2;
-                Vector2 offsetPrev = new Vector2(XOffsetPrev * xStep, 0f);
+                float xStepPrev = windowSize.x / _net.Layers[l-1].Count;
+                Vector2 offsetPrev = new Vector2(0f, (l-1) * vertStep);
 
-                for (int w = 0; w < _net.Layers[l - 1].Count; w++) {
+                for (int w = 0; w < _net.Layers[l-1].Count; w++) {
                     Vector2 prevNPos = 
                         windowTopRight +
                         offsetPrev +
-                        new Vector2(w * xStep, (l-1) * vertStep);
+                        new Vector2(w * xStepPrev, 0f);
                     
-
                     float wVal = _net.Layers[l].Weights[n,w];
                     float synAct = _net.Layers[l - 1].Outputs[w] * wVal;
 

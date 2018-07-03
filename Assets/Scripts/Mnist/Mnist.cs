@@ -92,12 +92,12 @@ public class Mnist {
         }
     }
 
-    public static float Sum(float[] vector) {
+    public static float Cost(float[] vector) {
         float sum = 0f;
         for (int i = 0; i < vector.Length; i++) {
-            sum += vector[i];
+            sum += Mathf.Abs(vector[i]);
         }
-        return sum;
+        return sum * sum;
     }
 }
 

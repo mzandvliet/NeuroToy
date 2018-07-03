@@ -352,14 +352,13 @@ public static class NetUtils {
         }
     }
 
-    public static void StochasticParameterUpdate(Network net) {
-        float rate = 0.1f;
+    public static void StochasticParameterUpdate(Network net, float learningRate) {
         for (int l = 1; l < net.Layers.Count; l++) {
             for (int n = 0; n < net.Layers[l].Count; n++) {
-                net.Layers[l].Biases[n] -= net.Layers[l].DCDZ[n] * rate;
+                net.Layers[l].Biases[n] -= net.Layers[l].DCDZ[n] * learningRate;
 
                 for (int w = 0; w < net.Layers[l-1].Outputs.Length; w++) {
-                    net.Layers[l].Weights[n, w] -= net.Layers[l].DCDW[n, w] * rate;
+                    net.Layers[l].Weights[n, w] -= net.Layers[l].DCDW[n, w] * learningRate;
                 }
             }
         }

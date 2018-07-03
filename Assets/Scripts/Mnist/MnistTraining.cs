@@ -4,6 +4,9 @@ using UnityEngine;
 
 /* 
 Todo:
+- Better training progress logging (graph of average cost per batch)
+- Minibatch average gradient collection and update
+- Code refactoring
 
 - One perceived problem right now is that randomly initialized networks don't seem
 to correspond to uniform distribution over the output classes. I suspect this
@@ -21,14 +24,16 @@ public class MnistTraining : MonoBehaviour {
     private Network _net;
     [SerializeField] private NeuralNetRenderer _renderer;
 
+    int _batchesTrained;
+
     private void Awake() {
+        Application.runInBackground = true;
         _random = new System.Random(1234);
 
         Mnist.Load(out _pixels, out _labels);
 
         _tex = new Texture2D(Mnist.Rows, Mnist.Cols, TextureFormat.ARGB32, false, true); // Lol
         _tex.filterMode = FilterMode.Point;
-        
         Mnist.ToTexture(_pixels, _currentIndex, _tex);
 
         var def = new NetDefinition(
@@ -44,13 +49,17 @@ public class MnistTraining : MonoBehaviour {
     }
 
     private void TrainMinibatch(Network net) {
-        var batch = Mnist.GetBatch(16, _pixels, _labels, _random);
+        const int batchSize = 128;
+        var batch = Mnist.GetBatch(batchSize, _pixels, _labels, _random);
 
         var target = new float[10];
         var dCdO = new float[10];
 
         // Todo: have a buffer in which to store minibatch gradients for averaging
         // Needs code restructuring to make this easy to allocate
+
+        float avgBatchCost = 0f;
+        int correctLabels = 0;
 
         for (int i = 0; i < batch.Labels.Length; i++) {
             // Copy image to input layer
@@ -63,21 +72,29 @@ public class MnistTraining : MonoBehaviour {
             int outputClass = NetUtils.GetMaxOutput(net);
             Mnist.LabelToVector(batch.Labels[i], target);
 
+            if (outputClass == batch.Labels[i]) {
+                correctLabels++;
+            }
+
             // Calculate error between output layer and target
             Mnist.Subtract(target, net.Output, dCdO);
-            float cost = Mathf.Pow(Mnist.Sum(dCdO), 2f);
-
-            Debug.Log("Target label: " + batch.Labels[i] + ", predicted: " + outputClass + ", Cost: " + cost);
+            float cost = Mnist.Cost(dCdO);
+            avgBatchCost += cost;
 
             // Propagate error back
             // Calculate per-parameter gradient, store it
 
             NetUtils.Backward(net, target);
 
-            NetUtils.StochasticParameterUpdate(net);
+            NetUtils.StochasticParameterUpdate(net, 0.5f);
         }
 
+        avgBatchCost /= (float)batchSize;
+        Debug.Log("Batch: " + _batchesTrained + ", Cost: " + avgBatchCost + ", Correct: " + correctLabels + "/" + batchSize);
+
         // Update weights and biases according to averaged gradient and learning rate 
+
+        _batchesTrained++;
     }
 
     private void Update() {
@@ -88,9 +105,7 @@ public class MnistTraining : MonoBehaviour {
             Navigate(_currentIndex - 1);
         }
 
-        //if (Input.GetKeyDown(KeyCode.Space)) {
-            TrainMinibatch(_net);
-        //}
+        TrainMinibatch(_net);
     }
 
     private void Navigate(int index) {
