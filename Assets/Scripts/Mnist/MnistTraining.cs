@@ -49,7 +49,7 @@ public class MnistTraining : MonoBehaviour {
     }
 
     private void TrainMinibatch(Network net) {
-        const int batchSize = 128;
+        const int batchSize = 64;
         var batch = Mnist.GetBatch(batchSize, _pixels, _labels, _random);
 
         var target = new float[10];
@@ -86,7 +86,7 @@ public class MnistTraining : MonoBehaviour {
 
             NetUtils.Backward(net, target);
 
-            NetUtils.StochasticParameterUpdate(net, 0.5f);
+            NetUtils.StochasticParameterUpdate(net, 0.001f);
         }
 
         avgBatchCost /= (float)batchSize;
