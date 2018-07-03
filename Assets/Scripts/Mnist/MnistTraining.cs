@@ -22,6 +22,7 @@ public class MnistTraining : MonoBehaviour {
     private System.Random _random;
     
     private Network _net;
+    private Network _gradientBucket;
     [SerializeField] private NeuralNetRenderer _renderer;
 
     int _batchesTrained;
@@ -41,6 +42,7 @@ public class MnistTraining : MonoBehaviour {
             new LayerDefinition(30, LayerType.Deterministic, ActivationType.Sigmoid),
             new LayerDefinition(10, LayerType.Deterministic, ActivationType.Sigmoid));
         _net = NetBuilder.Build(def);
+        _gradientBucket = NetBuilder.Build(def);
 
         // Todo: Xavier initialization
         NetUtils.Randomize(_net, _random);
@@ -48,7 +50,7 @@ public class MnistTraining : MonoBehaviour {
         _renderer.SetTarget(_net);
     }
 
-    private void TrainMinibatch(Network net) {
+    private void TrainMinibatch() {
         const int batchSize = 64;
         var batch = Mnist.GetBatch(batchSize, _pixels, _labels, _random);
 
@@ -61,15 +63,17 @@ public class MnistTraining : MonoBehaviour {
         float avgBatchCost = 0f;
         int correctLabels = 0;
 
+        ZeroGradients(_gradientBucket);
+
         for (int i = 0; i < batch.Labels.Length; i++) {
             // Copy image to input layer
             for (int p = 0; p < Mnist.ImgDims; p++) {
-                net.Input[p] = batch.Images[i][p];
+                _net.Input[p] = batch.Images[i][p];
             }
 
-            NetUtils.Forward(net);
+            NetUtils.Forward(_net);
 
-            int outputClass = NetUtils.GetMaxOutput(net);
+            int outputClass = NetUtils.GetMaxOutput(_net);
             Mnist.LabelToVector(batch.Labels[i], target);
 
             if (outputClass == batch.Labels[i]) {
@@ -77,24 +81,59 @@ public class MnistTraining : MonoBehaviour {
             }
 
             // Calculate error between output layer and target
-            Mnist.Subtract(target, net.Output, dCdO);
+            Mnist.Subtract(target, _net.Output, dCdO);
             float cost = Mnist.Cost(dCdO);
             avgBatchCost += cost;
 
             // Propagate error back
             // Calculate per-parameter gradient, store it
 
-            NetUtils.Backward(net, target);
+            NetUtils.Backward(_net, target);
 
-            NetUtils.StochasticParameterUpdate(net, 0.001f);
+            AddGradients(_net, _gradientBucket);
         }
 
         avgBatchCost /= (float)batchSize;
         Debug.Log("Batch: " + _batchesTrained + ", Cost: " + avgBatchCost + ", Correct: " + correctLabels + "/" + batchSize);
 
-        // Update weights and biases according to averaged gradient and learning rate 
+        // Update weights and biases according to averaged gradient and learning rate
+        DivideGradients(_net, (float)batchSize);
+        NetUtils.UpdateParameters(_net, _gradientBucket, 0.01f);
 
         _batchesTrained++;
+    }
+
+    private static void ZeroGradients(Network bucket) {
+        for (int l = 1; l < bucket.Layers.Count; l++) {
+            for (int n = 0; n < bucket.Layers[l].Count; n++) {
+                bucket.Layers[l].DCDZ[n] = 0f;
+                for (int w = 0; w < bucket.Layers[l-1].Count; w++) {
+                    bucket.Layers[l].DCDW[n, w] = 0f;
+                }
+            }
+        }
+    }
+
+    private static void AddGradients(Network values, Network bucket) {
+        for (int l = 1; l < bucket.Layers.Count; l++) {
+            for (int n = 0; n < bucket.Layers[l].Count; n++) {
+                bucket.Layers[l].DCDZ[n] += values.Layers[l].DCDZ[n];
+                for (int w = 0; w < bucket.Layers[l - 1].Count; w++) {
+                    bucket.Layers[l].DCDW[n, w] += values.Layers[l].DCDW[n, w];
+                }
+            }
+        }
+    }
+
+    private static void DivideGradients(Network bucket, float factor) {
+        for (int l = 1; l < bucket.Layers.Count; l++) {
+            for (int n = 0; n < bucket.Layers[l].Count; n++) {
+                bucket.Layers[l].DCDZ[n] /= factor;
+                for (int w = 0; w < bucket.Layers[l - 1].Count; w++) {
+                    bucket.Layers[l].DCDW[n, w] /= factor;
+                }
+            }
+        }
     }
 
     private void Update() {
@@ -105,7 +144,7 @@ public class MnistTraining : MonoBehaviour {
             Navigate(_currentIndex - 1);
         }
 
-        TrainMinibatch(_net);
+        TrainMinibatch();
     }
 
     private void Navigate(int index) {
