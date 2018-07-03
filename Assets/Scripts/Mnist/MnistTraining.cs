@@ -54,13 +54,13 @@ public class MnistTraining : MonoBehaviour {
 
         _renderer.SetTarget(_net);
 
-        _testBatch = Mnist.GetBatch(4, _pixels, _labels, _random);
+        _testBatch = Mnist.GetBatch(16, _pixels, _labels, _random);
         Navigate(0);
     }
 
     private void TrainMinibatch() {
         const int numClasses = 10;
-        const int batchSize = 10;
+        const int batchSize = 16;
         var batch = Mnist.GetBatch(batchSize, _pixels, _labels, _random);
 
         var target = new float[numClasses];
@@ -112,7 +112,7 @@ public class MnistTraining : MonoBehaviour {
         _batchesTrained++;
 
         Debug.Log("Batch: " + _batchesTrained + ", Cost: " + avgBatchCost + ", Correct: " + correctLabels + "/" + batchSize + " Rate: " + rate);
-        //Mnist.ToTexture(batch, 0, _tex);
+        Mnist.ToTexture(batch, 0, _tex);
     }
 
     private static void ZeroGradients(Network bucket) {
@@ -184,7 +184,7 @@ public class MnistTraining : MonoBehaviour {
         }
 
         // if (_batchesTrained < 30) {
-        //     TrainMinibatch();
+            TrainMinibatch();
         // }
     }
 
@@ -194,8 +194,8 @@ public class MnistTraining : MonoBehaviour {
     }
 
     private void OnGUI() {
-        GUI.Label(new Rect(0f, 0f, 280f, 32f), "Image: " + _currentIndex);
-        GUI.Label(new Rect(0f, 32f, 280f, 32f), "Label: " + _labels[_currentIndex]);
+        GUI.Label(new Rect(0f, 0f, 280f, 32f), "Index: " + _currentIndex);
+        GUI.Label(new Rect(0f, 32f, 280f, 32f), "Label: " + _testBatch.Labels[_currentIndex]);
         GUI.DrawTexture(new Rect(0f, 64f, 280f, 280f), _tex, ScaleMode.ScaleToFit);
     }
 
