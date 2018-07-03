@@ -311,7 +311,7 @@ public class DeterministicWeightBiasLayer : ILayer {
             float dOdZ = _actD(_o[n]); // Reuses forward pass evaluation of act(z)
             _dCdZ[n] = dCdO[n] * dOdZ;
 
-            for (int w = 0; w < _w.Length; w++) {
+            for (int w = 0; w < prev.Outputs.Length; w++) {
                 _dWdC[n, w] = _dCdZ[n] * prev.Outputs[w];
             }
         }
@@ -322,11 +322,11 @@ public class DeterministicWeightBiasLayer : ILayer {
             float dOdZ = _actD(_o[n]);
 
             _dCdZ[n] = 0f;
-            for (int n2 = 0; n2 < next.DCDW.Length; n2++) {
+            for (int n2 = 0; n2 < next.Outputs.Length; n2++) {
                 _dCdZ[n] = next.DCDW[n2, n] * dOdZ * dOdZ;
             }
 
-            for (int w = 0; w < _w.Length; w++) {
+            for (int w = 0; w < prev.Outputs.Length; w++) {
                 _dWdC[n, w] = _dCdZ[n] * prev.Outputs[w];
             }
         }
