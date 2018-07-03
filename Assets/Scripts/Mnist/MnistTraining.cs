@@ -31,15 +31,16 @@ public class MnistTraining : MonoBehaviour {
 
     int _batchesTrained;
 
+    private Batch _testBatch;
+
     private void Awake() {
         Application.runInBackground = true;
-        _random = new System.Random(1234);
+        _random = new System.Random();
 
         Mnist.Load(out _pixels, out _labels);
 
         _tex = new Texture2D(Mnist.Rows, Mnist.Cols, TextureFormat.ARGB32, false, true); // Lol
         _tex.filterMode = FilterMode.Point;
-        Mnist.ToTexture(_pixels, _currentIndex, _tex);
 
         var def = new NetDefinition(
             Mnist.ImgDims,
@@ -52,14 +53,18 @@ public class MnistTraining : MonoBehaviour {
         NetUtils.Randomize(_net, _random);
 
         _renderer.SetTarget(_net);
+
+        _testBatch = Mnist.GetBatch(4, _pixels, _labels, _random);
+        Navigate(0);
     }
 
     private void TrainMinibatch() {
-        const int batchSize = 16;
+        const int numClasses = 10;
+        const int batchSize = 10;
         var batch = Mnist.GetBatch(batchSize, _pixels, _labels, _random);
 
-        var target = new float[10];
-        var dCdO = new float[10];
+        var target = new float[numClasses];
+        var dCdO = new float[numClasses];
 
         // Todo: have a buffer in which to store minibatch gradients for averaging
         // Needs code restructuring to make this easy to allocate
@@ -83,6 +88,7 @@ public class MnistTraining : MonoBehaviour {
             if (outputClass == batch.Labels[i]) {
                 correctLabels++;
             }
+            Debug.Log(outputClass + ", " + batch.Labels[i]);
 
             // Calculate error between output layer and target
             Mnist.Subtract(target, _net.Output, dCdO);
@@ -93,22 +99,20 @@ public class MnistTraining : MonoBehaviour {
             // Calculate per-parameter gradient, store it
 
             NetUtils.Backward(_net, target);
-            
             AddGradients(_net, _gradientBucket);
-            //ZeroGradients(_gradientBucket);
         }
 
         avgBatchCost /= (float)batchSize;
         DivideGradients(_gradientBucket, (float)batchSize);
-        //ClipGradients()
 
         // Update weights and biases according to averaged gradient and learning rate
-        float rate = 0.3f / (1f + Mathf.Log(1f + (float)_batchesTrained, 8f));
+        float rate = 3.0f;// / (1f + Mathf.Log(1f + (float)_batchesTrained, 2f));
         NetUtils.UpdateParameters(_net, _gradientBucket, rate);
 
         _batchesTrained++;
 
         Debug.Log("Batch: " + _batchesTrained + ", Cost: " + avgBatchCost + ", Correct: " + correctLabels + "/" + batchSize + " Rate: " + rate);
+        //Mnist.ToTexture(batch, 0, _tex);
     }
 
     private static void ZeroGradients(Network bucket) {
@@ -144,6 +148,22 @@ public class MnistTraining : MonoBehaviour {
         }
     }
 
+    private static void CheckGradients(Network bucket) {
+        for (int l = 1; l < bucket.Layers.Count; l++) {
+            for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
+                if (bucket.Layers[l].DCDZ[n] == 0f) {
+                    Debug.Log("dBias Zero: " + l + ", " + n);
+                }
+                
+                for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
+                    if (bucket.Layers[l].DCDW[n, w] == 0f) {
+                        Debug.Log("dWeight Zero: " + l + ", " + n + ", " + w);
+                    }
+                }
+            }
+        }
+    }
+
     private static void ClipGradients(Network bucket) {
         for (int l = 1; l < bucket.Layers.Count; l++) {
             for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
@@ -163,12 +183,14 @@ public class MnistTraining : MonoBehaviour {
             Navigate(_currentIndex - 1);
         }
 
-        TrainMinibatch();
+        // if (_batchesTrained < 30) {
+        //     TrainMinibatch();
+        // }
     }
 
     private void Navigate(int index) {
-        _currentIndex = Mathf.Clamp(index, 0, Mnist.NumImgs);
-        Mnist.ToTexture(_pixels, _currentIndex, _tex);
+        _currentIndex = Mathf.Clamp(index, 0, _testBatch.Labels.Length);
+        Mnist.ToTexture(_testBatch, _currentIndex, _tex);
     }
 
     private void OnGUI() {

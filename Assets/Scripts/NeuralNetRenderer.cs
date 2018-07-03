@@ -67,10 +67,13 @@ public class NeuralNetRenderer : MonoBehaviour {
                         new Vector2(w * xStepPrev, 0f);
                     
                     float wVal = _net.Layers[l].Weights[n,w];
-                    float synAct = _net.Layers[l - 1].Outputs[w] * wVal;
-
-                    Color wCol = new Color(Mathf.Max(0f, -wVal), 0f, Mathf.Max(0f, wVal), Mathf.Abs(synAct));
-                    float width = 0.05f + Mathf.Pow(synAct, 1f) * 0.5f;
+                    float synAct = _net.Layers[l - 1].Outputs[w];
+                    
+                    Color wCol = wVal > 0f ? 
+                        Color.Lerp(Color.white, Color.blue, Mathf.Clamp01(wVal)) :
+                        Color.Lerp(Color.white, Color.red, Mathf.Clamp01(-wVal));
+                    //wCol.a = synAct;
+                    float width = 0.3f;
                     Drawing.DrawLine(prevNPos, curNPos, wCol, width, true);
                 }
             }

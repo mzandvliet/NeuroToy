@@ -351,11 +351,13 @@ public static class NetUtils {
         float[] dCdO = new float[target.Length];
         Mnist.Subtract(net.Output, target, dCdO);
 
-        net.Layers[net.Layers.Count-1].BackwardFinal(net.Layers[net.Layers.Count - 2], dCdO);
+        net.Layers[2].BackwardFinal(net.Layers[1], dCdO);
 
-        for (int l = net.Layers.Count-2; l > 0; l--) {
-            net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
-        }
+        // for (int l = net.Layers.Count-2; l > 0; l--) {
+        //     net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
+        // }
+
+        net.Layers[1].Backward(net.Layers[0], net.Layers[2]);
     }
 
     public static void UpdateParameters(Network net, Network gradients, float learningRate) {
@@ -385,7 +387,21 @@ public static class NetUtils {
     public const float WMax = 1f;
     public const float PMax = 1f;
 
-    #region Genetic Algorithm
+    public static void Zero(Network network) {
+        for (int l = 0; l < network.Layers.Count; l++) {
+            for (int p = 0; p < network.Layers[l].ParamCount; p++) {
+                network.Layers[l][p] = 0f;
+            }
+        }
+    }
+
+    public static void Randomize(Network network, Random r) {
+        for (int l = 0; l < network.Layers.Count; l++) {
+            for (int p = 0; p < network.Layers[l].ParamCount; p++) {
+                network.Layers[l][p] = Utils.Gaussian(r);
+            }
+        }
+    }
 
     public static void Copy(Network fr, Network to) {
         // Todo: If netdefs don't match, error
@@ -396,6 +412,8 @@ public static class NetUtils {
             }
         }
     }
+
+    #region Genetic Algorithm
 
     public static void CrossOver(Network a, Network b, Network c, Random r) {
         for (int l = 0; l < c.Layers.Count; l++) {
@@ -417,22 +435,6 @@ public static class NetUtils {
                 if (r.NextDouble() < chance) {
                     network.Layers[l][p] = Mathf.Clamp(network.Layers[l][p] + Utils.Gaussian(r) * magnitude, -PMax, PMax);
                 }
-            }
-        }
-    }
-
-    public static void Zero(Network network) {
-        for (int l = 0; l < network.Layers.Count; l++) {
-            for (int p = 0; p < network.Layers[l].ParamCount; p++) {
-                network.Layers[l][p] = 0f;
-            }
-        }
-    }
-
-    public static void Randomize(Network network, Random r) {
-        for (int l = 0; l < network.Layers.Count; l++) {
-            for (int p = 0; p < network.Layers[l].ParamCount; p++) {
-                network.Layers[l][p] = Utils.Gaussian(r);
             }
         }
     }

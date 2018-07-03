@@ -76,8 +76,23 @@ public class Mnist {
         tex.Apply(false);
     }
 
+    public static void ToTexture(Batch b, int imgIndex, Texture2D tex) {
+        var colors = new Color[Rows * Cols];
+
+        for (int y = 0; y < Cols; y++) {
+            for (int x = 0; x < Rows; x++) {
+                float pix = b.Images[imgIndex][ y * Cols + x]; //  / 256f
+                // Invert y
+                colors[(Cols - 1 - y) * Cols + x] = new Color(pix, pix, pix, 1f);
+            }
+        }
+
+        tex.SetPixels(0, 0, Rows, Cols, colors);
+        tex.Apply(false);
+    }
+
     public static void LabelToVector(int label, float[] vector) {
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < vector.Length; i++) {
             vector[i] = i == label ? 1f : 0f;
         }
     }
