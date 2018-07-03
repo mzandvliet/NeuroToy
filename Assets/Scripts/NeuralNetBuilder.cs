@@ -63,7 +63,7 @@ public interface ILayer {
     float[] Biases { get; }
     float[] DCDZ { get; }
     float[] Z { get; } // Weighted input, used for backpropagation
-    int Count { get; }
+    int NeuronCount { get; }
     int ParamCount { get; }
     float this[int index] { get; set; }
 }
@@ -144,10 +144,10 @@ public static class NetBuilder {
 }
 
 public class InputLayer : ILayer {
-    private readonly float[] _a;
+    private readonly float[] _o;
 
-    public int Count {
-        get { return _a.Length; }
+    public int NeuronCount {
+        get { return _o.Length; }
     }
 
     public int ParamCount {
@@ -164,56 +164,54 @@ public class InputLayer : ILayer {
     }
 
     public float[] Outputs {
-        get { return _a; }
+        get { return _o; }
     }
 
     public float[,] Weights {
-        get { return null; }
+        get { throw new NotImplementedException(); }
     }
 
     public float[,] DCDW {
-        get { return null; }
+        get { throw new NotImplementedException(); }
     }
 
     public float[] Biases {
-        get { return null; }
+        get { throw new NotImplementedException(); }
     }
 
     public float[] DCDZ {
-        get { return null; }
+        get { throw new NotImplementedException(); }
     }
 
     public float[] Z {
-        get { return null; }
+        get { throw new NotImplementedException(); }
     }
 
     public InputLayer(int size) {
-        _a = new float[size];
+        _o = new float[size];
     }
 
     public float[] Forward(float[] input) {
-        for (int i = 0; i < input.Length; i++) {
-            _a[i] = input[i];
-        }
-
-        return _a;
+        throw new NotImplementedException();
     }
 
     public void Backward(ILayer prev, ILayer next) {
+        throw new NotImplementedException();
     }
     public void BackwardFinal(ILayer prev, float[] dCdO) {
+        throw new NotImplementedException();
     }
 }
 
 public class DeterministicWeightBiasLayer : ILayer {
     private readonly float[] _o; // Non-linear activations
     private readonly float[] _z; // Linear activations (kept for backpropagation)
-    private readonly Func<float, float> _act;
-    private readonly Func<float, float> _actD;
+    private readonly Func<float, float> _act; // Activation function
+    private readonly Func<float, float> _actD; // 1st derivative of activation function
 
     // Params
     private readonly float[] _b; // Biases
-    private readonly float[] _dCdZ; // Biases gradients
+    private readonly float[] _dCdZ; // Bias gradients
     private readonly float[,] _w; // Weights
     private readonly float[,] _dWdC; // Weight gradients
 
@@ -221,7 +219,7 @@ public class DeterministicWeightBiasLayer : ILayer {
      * Todo: this way of flattening the params is not great, but
      * it has to be done somehow. */
 
-    public int Count {
+    public int NeuronCount {
         get { return _o.Length; }
     }
 
@@ -292,13 +290,11 @@ public class DeterministicWeightBiasLayer : ILayer {
         }
 
         for (int n = 0; n < _o.Length; n++) {
-            float a = 0f;
-            // Dot inputs with weights
+            // Linear activation
+            _z[n] = _b[n];
             for (int w = 0; w < input.Length; w++) {
-                a += input[w] * _w[n, w];
+                _z[n] += input[w] * _w[n, w];
             }
-            // Linear activation is the above plus bias
-            _z[n] = a + _b[n];
             // Non-linear activation
             _o[n] = _act(_z[n]);
         }
@@ -317,14 +313,24 @@ public class DeterministicWeightBiasLayer : ILayer {
         }
     }
 
+    /*
+    float deltaCost_deltaO = 0.0f;
+    for (size_t destinationNeuronIndex = 0; destinationNeuronIndex < OUTPUT_NEURONS; ++destinationNeuronIndex)
+        deltaCost_deltaO += m_outputLayerBiasesDeltaCost[destinationNeuronIndex] * m_outputLayerWeights[OutputLayerWeightIndex(neuronIndex, destinationNeuronIndex)];
+    
+    float deltaO_deltaZ = m_hiddenLayerOutputs[neuronIndex] * (1.0f - m_hiddenLayerOutputs[neuronIndex]);
+    m_hiddenLayerBiasesDeltaCost[neuronIndex] = deltaCost_deltaO * deltaO_deltaZ;
+    */
+
     public void Backward(ILayer prev, ILayer next) {
         for (int n = 0; n < _o.Length; n++) {
             float dOdZ = _actD(_o[n]);
 
             _dCdZ[n] = 0f;
-            for (int n2 = 0; n2 < next.Outputs.Length; n2++) {
-                _dCdZ[n] = next.DCDW[n2, n] * dOdZ * dOdZ;
+            for (int nNext = 0; nNext < next.Outputs.Length; nNext++) {
+                _dCdZ[n] += next.DCDZ[nNext] * next.Weights[nNext, n];
             }
+            _dCdZ[n] *= dOdZ;
 
             for (int w = 0; w < prev.Outputs.Length; w++) {
                 _dWdC[n, w] = _dCdZ[n] * prev.Outputs[w];
@@ -354,7 +360,7 @@ public static class NetUtils {
 
     public static void UpdateParameters(Network net, Network gradients, float learningRate) {
         for (int l = 1; l < net.Layers.Count; l++) {
-            for (int n = 0; n < net.Layers[l].Count; n++) {
+            for (int n = 0; n < net.Layers[l].NeuronCount; n++) {
                 net.Layers[l].Biases[n] -= gradients.Layers[l].DCDZ[n] * learningRate;
 
                 for (int w = 0; w < net.Layers[l-1].Outputs.Length; w++) {

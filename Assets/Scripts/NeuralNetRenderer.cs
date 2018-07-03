@@ -27,17 +27,17 @@ public class NeuralNetRenderer : MonoBehaviour {
 
         int biggestLayerSize = 0;
         for (int i = 0; i < _net.Layers.Count; i++) {
-            if (_net.Layers[i].Count > biggestLayerSize) {
-                biggestLayerSize = _net.Layers[i].Count;
+            if (_net.Layers[i].NeuronCount > biggestLayerSize) {
+                biggestLayerSize = _net.Layers[i].NeuronCount;
             }
         }
 
         float vertStep = windowSize.y / _net.Layers.Count;
 
         for (int l = 0; l < _net.Layers.Count; l++) {
-            for (int n = 0; n < _net.Layers[l].Count; n++) {
+            for (int n = 0; n < _net.Layers[l].NeuronCount; n++) {
                 // Draw a texture for each neuron in the layer
-                float xStep = windowSize.x / _net.Layers[l].Count;
+                float xStep = windowSize.x / _net.Layers[l].NeuronCount;
                 Vector2 offsetCur = new Vector2(0f, l * vertStep);
                 Vector2 curNPos =
                         windowTopRight +
@@ -57,10 +57,10 @@ public class NeuralNetRenderer : MonoBehaviour {
 
                 // If we have previous layer, draw connections from those neurons to
                 // The ones in the current layer
-                float xStepPrev = windowSize.x / _net.Layers[l-1].Count;
+                float xStepPrev = windowSize.x / _net.Layers[l-1].NeuronCount;
                 Vector2 offsetPrev = new Vector2(0f, (l-1) * vertStep);
 
-                for (int w = 0; w < _net.Layers[l-1].Count; w++) {
+                for (int w = 0; w < _net.Layers[l-1].NeuronCount; w++) {
                     Vector2 prevNPos = 
                         windowTopRight +
                         offsetPrev +

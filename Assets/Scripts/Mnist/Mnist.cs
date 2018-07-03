@@ -95,9 +95,9 @@ public class Mnist {
     public static float Cost(float[] vector) {
         float sum = 0f;
         for (int i = 0; i < vector.Length; i++) {
-            sum += Mathf.Abs(vector[i]);
+            sum += vector[i] * vector[i];
         }
-        return sum * sum;
+        return 0.5f * sum;
     }
 }
 

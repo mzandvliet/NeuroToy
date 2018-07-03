@@ -4,9 +4,13 @@ using UnityEngine;
 
 /* 
 Todo:
+- Fix fundamental problems, get the computation correct
 - Better training progress logging (graph of average cost per batch)
 - Minibatch average gradient collection and update
-- Code refactoring
+- Code refactoring:
+    - Separation of data structures needed for forward and backward evaluation; for training and use
+    - vector/matrix notation
+    - ...and a library that computes those efficiently
 
 - One perceived problem right now is that randomly initialized networks don't seem
 to correspond to uniform distribution over the output classes. I suspect this
@@ -51,7 +55,7 @@ public class MnistTraining : MonoBehaviour {
     }
 
     private void TrainMinibatch() {
-        const int batchSize = 64;
+        const int batchSize = 16;
         var batch = Mnist.GetBatch(batchSize, _pixels, _labels, _random);
 
         var target = new float[10];
@@ -89,8 +93,9 @@ public class MnistTraining : MonoBehaviour {
             // Calculate per-parameter gradient, store it
 
             NetUtils.Backward(_net, target);
-
+            
             AddGradients(_net, _gradientBucket);
+            //ZeroGradients(_gradientBucket);
         }
 
         avgBatchCost /= (float)batchSize;
@@ -98,16 +103,16 @@ public class MnistTraining : MonoBehaviour {
 
         // Update weights and biases according to averaged gradient and learning rate
         DivideGradients(_net, (float)batchSize);
-        NetUtils.UpdateParameters(_net, _gradientBucket, 0.01f);
+        NetUtils.UpdateParameters(_net, _gradientBucket, 0.1f);
 
         _batchesTrained++;
     }
 
     private static void ZeroGradients(Network bucket) {
         for (int l = 1; l < bucket.Layers.Count; l++) {
-            for (int n = 0; n < bucket.Layers[l].Count; n++) {
+            for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
                 bucket.Layers[l].DCDZ[n] = 0f;
-                for (int w = 0; w < bucket.Layers[l-1].Count; w++) {
+                for (int w = 0; w < bucket.Layers[l-1].NeuronCount; w++) {
                     bucket.Layers[l].DCDW[n, w] = 0f;
                 }
             }
@@ -116,9 +121,9 @@ public class MnistTraining : MonoBehaviour {
 
     private static void AddGradients(Network values, Network bucket) {
         for (int l = 1; l < bucket.Layers.Count; l++) {
-            for (int n = 0; n < bucket.Layers[l].Count; n++) {
+            for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
                 bucket.Layers[l].DCDZ[n] += values.Layers[l].DCDZ[n];
-                for (int w = 0; w < bucket.Layers[l - 1].Count; w++) {
+                for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
                     bucket.Layers[l].DCDW[n, w] += values.Layers[l].DCDW[n, w];
                 }
             }
@@ -127,9 +132,9 @@ public class MnistTraining : MonoBehaviour {
 
     private static void DivideGradients(Network bucket, float factor) {
         for (int l = 1; l < bucket.Layers.Count; l++) {
-            for (int n = 0; n < bucket.Layers[l].Count; n++) {
+            for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
                 bucket.Layers[l].DCDZ[n] /= factor;
-                for (int w = 0; w < bucket.Layers[l - 1].Count; w++) {
+                for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
                     bucket.Layers[l].DCDW[n, w] /= factor;
                 }
             }
