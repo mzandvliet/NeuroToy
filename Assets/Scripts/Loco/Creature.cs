@@ -113,7 +113,7 @@ public static class CreatureFactory {
             new LayerDefinition((numInputs + numOutputs) / 2,
             LayerType.Deterministic, ActivationType.Tanh),
             new LayerDefinition(numOutputs,
-            LayerType.Stochastic, ActivationType.Sigmoid)
+            LayerType.Deterministic, ActivationType.Sigmoid)
         );
     }
 

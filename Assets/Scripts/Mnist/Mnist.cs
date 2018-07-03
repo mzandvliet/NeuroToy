@@ -92,10 +92,10 @@ public class Mnist {
         }
     }
 
-    public static float SumOfSquares(float[] vector) {
+    public static float Sum(float[] vector) {
         float sum = 0f;
         for (int i = 0; i < vector.Length; i++) {
-            sum += vector[i] * vector[i];
+            sum += vector[i];
         }
         return sum;
     }

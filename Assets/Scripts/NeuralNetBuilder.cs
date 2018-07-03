@@ -33,8 +33,7 @@ public enum ActivationType {
 }
 
 public enum LayerType {
-    Deterministic,
-    Stochastic
+    Deterministic
 }
 
 public struct LayerDefinition {
@@ -55,18 +54,26 @@ public struct LayerDefinition {
 
 public interface ILayer {
     float[] Forward(float[] input);
-    float[] Activations { get; }
+    void Backward(ILayer prev, ILayer next);
+    void BackwardFinal(ILayer prev, float[] dCdO);
+
+    float[] Outputs { get; }
+    float[,] Weights { get; }
+    float[,] DCDW { get; }
+    float[] Biases { get; }
+    float[] DCDZ { get; }
     float[] Z { get; } // Weighted input, used for backpropagation
+    int Count { get; }
     int ParamCount { get; }
     float this[int index] { get; set; }
 }
 
 public struct NetDefinition {
-    public int Inputs;
+    public int InputSize;
     public LayerDefinition[] Layers;
 
     public NetDefinition(int inputs, params LayerDefinition[] layers) {
-        Inputs = inputs;
+        InputSize = inputs;
         Layers = layers;
     }
 
@@ -75,24 +82,22 @@ public struct NetDefinition {
         for (int i = 0; i < Layers.Length; i++) {
             layers += i + ": " + Layers[i].ToString() + "\n";
         }
-        return string.Format("Inputs: {0}, Layers:\n{1}", Inputs, layers);
+        return string.Format("Layers:\n{1}", layers);
     }
 }
 
 public class Network {
-    private readonly float[] _input;
     public readonly List<ILayer> Layers;
 
     public float[] Input {
-        get { return _input; }
+        get { return Layers[0].Outputs; }
     }
 
     public float[] Output {
-        get { return Layers[Layers.Count - 1].Activations; }
+        get { return Layers[Layers.Count - 1].Outputs; }
     }
 
-    public Network(int inputs, List<ILayer> layers) {
-        _input = new float[inputs];
+    public Network(List<ILayer> layers) {
         Layers = layers;
     }
 }
@@ -102,14 +107,19 @@ public static class NetBuilder {
 
         List<ILayer> layers = new List<ILayer>();
 
+        layers.Add(new InputLayer(definition.InputSize));
+
         for (int i = 0; i < definition.Layers.Length; i++) {
             Func<float, float> activation = null;
+            Func<float, float> activationD = null;
             switch (definition.Layers[i].ActivationType) {
                 case ActivationType.Sigmoid:
                     activation = Utils.Sigmoid;
+                    activationD = Utils.SigmoidD;
                     break;
                 case ActivationType.Tanh:
                     activation = Utils.Tanh;
+                    activationD = null; // Todo:
                     break;
             }
 
@@ -118,38 +128,102 @@ public static class NetBuilder {
                 case LayerType.Deterministic:
                     l = new DeterministicWeightBiasLayer(
                         definition.Layers[i].Size,
-                        i == 0 ? definition.Inputs : definition.Layers[i-1].Size,
-                        activation);
-                    break;
-                case LayerType.Stochastic:
-                    l = new StochasticWeightBiasLayer(
-                        definition.Layers[i].Size,
-                        i == 0 ? definition.Inputs : definition.Layers[i - 1].Size,
-                        activation);
+                        i == 0 ? definition.InputSize : definition.Layers[i - 1].Size,
+                        activation,
+                        activationD);
                     break;
             }
 
             layers.Add(l);
         }
 
-        Network network = new Network(definition.Inputs, layers);
+        Network network = new Network(layers);
 
         return network;
     }
 }
 
+public class InputLayer : ILayer {
+    private readonly float[] _a;
+
+    public int Count {
+        get { return _a.Length; }
+    }
+
+    public int ParamCount {
+        get { return 0; }
+    }
+
+    public float this[int index] {
+        get {
+            return 0f;
+        }
+        set {
+            return;
+        }
+    }
+
+    public float[] Outputs {
+        get { return _a; }
+    }
+
+    public float[,] Weights {
+        get { return null; }
+    }
+
+    public float[,] DCDW {
+        get { return null; }
+    }
+
+    public float[] Biases {
+        get { return null; }
+    }
+
+    public float[] DCDZ {
+        get { return null; }
+    }
+
+    public float[] Z {
+        get { return null; }
+    }
+
+    public InputLayer(int size) {
+        _a = new float[size];
+    }
+
+    public float[] Forward(float[] input) {
+        for (int i = 0; i < input.Length; i++) {
+            _a[i] = input[i];
+        }
+
+        return _a;
+    }
+
+    public void Backward(ILayer prev, ILayer next) {
+    }
+    public void BackwardFinal(ILayer prev, float[] dCdO) {
+    }
+}
+
 public class DeterministicWeightBiasLayer : ILayer {
-    private readonly float[] _a; // Non-linear activations
+    private readonly float[] _o; // Non-linear activations
     private readonly float[] _z; // Linear activations (kept for backpropagation)
     private readonly Func<float, float> _act;
+    private readonly Func<float, float> _actD;
 
     // Params
     private readonly float[] _b; // Biases
+    private readonly float[] _dCdZ; // Biases gradients
     private readonly float[,] _w; // Weights
+    private readonly float[,] _dWdC; // Weight gradietns
 
     /* Abstract parameter access for genetic algorithms
      * Todo: this way of flattening the params is not great, but
      * it has to be done somehow. */
+
+    public int Count {
+        get { return _o.Length; }
+    }
 
     public int ParamCount {
         get { return _b.Length + _w.GetLength(0) * _w.GetLength(1); }
@@ -177,20 +251,39 @@ public class DeterministicWeightBiasLayer : ILayer {
         }
     }
 
-    public float[] Activations {
-        get { return _a; }
-    }
-
     public float[] Z {
         get { return _z; }
     }
 
-    public DeterministicWeightBiasLayer(int size, int inputs, Func<float, float> activation) {
-        _a = new float[size];
+    public float[] Outputs {
+        get { return _o; }
+    }
+
+    public float[,] Weights {
+        get { return _w; }
+    }
+
+    public float[] Biases {
+        get { return _b; }
+    }
+
+    public float[,] DCDW {
+        get { return _dWdC; }
+    }
+
+    public float[] DCDZ {
+        get { return _dCdZ; }
+    }
+
+    public DeterministicWeightBiasLayer(int size, int prevLayerSize, Func<float, float> activation, Func<float, float> activationD) {
+        _o = new float[size];
         _z = new float[size];
         _b = new float[size];
-        _w = new float[size, inputs];
+        _w = new float[size, prevLayerSize];
+        _dCdZ = new float[size];
+        _dWdC = new float[size, prevLayerSize];
         _act = activation;
+        _actD = activationD;
     }
 
     public float[] Forward(float[] input) {
@@ -198,7 +291,7 @@ public class DeterministicWeightBiasLayer : ILayer {
             throw new ArgumentException("Number of inputs from last layer does not match number of weights from this layer");
         }
 
-        for (int n = 0; n < _a.Length; n++) {
+        for (int n = 0; n < _o.Length; n++) {
             float a = 0f;
             // Dot inputs with weights
             for (int w = 0; w < input.Length; w++) {
@@ -207,101 +300,56 @@ public class DeterministicWeightBiasLayer : ILayer {
             // Linear activation is the above plus bias
             _z[n] = a + _b[n];
             // Non-linear activation
-            _a[n] = _act(_z[n]);
+            _o[n] = _act(_z[n]);
         }
 
-        return _a;
-    }
-}
-
-/// Experiment in having noisy parameterization, a weight/bias are guassian
-/// distributions instead of real values
-public class StochasticWeightBiasLayer : ILayer {
-    private readonly float[] _a;
-    private readonly float[] _z;
-    private readonly Func<float, float> _act;
-
-    // Params
-    private readonly float[,] _b;
-    private readonly float[,] _w;
-
-    public int ParamCount {
-        get { return _b.Length + _w.GetLength(0) * _w.GetLength(1); }
+        return _o;
     }
 
-    public float this[int index] {
-        get {
-            if (index < _b.Length) {
-                return _b[
-                    index / _b.GetLength(1),
-                    index % _b.GetLength(1)];
+    public void BackwardFinal(ILayer prev, float[] dCdO) {
+        for (int n = 0; n < _o.Length; n++) {
+            float dOdZ = _actD(_o[n]); // Reuses forward pass evaluation of act(z)
+            _dCdZ[n] = dCdO[n] * dOdZ;
+
+            for (int w = 0; w < _w.Length; w++) {
+                _dWdC[n, w] = _dCdZ[n] * prev.Outputs[w];
+            }
+        }
+    }
+
+    public void Backward(ILayer prev, ILayer next) {
+        for (int n = 0; n < _o.Length; n++) {
+            float dOdZ = _actD(_o[n]);
+
+            _dCdZ[n] = 0f;
+            for (int n2 = 0; n2 < next.DCDW.Length; n2++) {
+                _dCdZ[n] = next.DCDW[n2, n] * dOdZ * dOdZ;
             }
 
-            index -= _b.Length;
-            return _w[
-                index / _w.GetLength(1),
-                index % _w.GetLength(1)];
-        }
-        set {
-            if (index < _b.Length) {
-                _b[
-                    index / _b.GetLength(1),
-                    index % _b.GetLength(1)] = value;
-                return;
+            for (int w = 0; w < _w.Length; w++) {
+                _dWdC[n, w] = _dCdZ[n] * prev.Outputs[w];
             }
-
-            index -= _b.Length;
-            _w[
-                index / _w.GetLength(1),
-                index % _w.GetLength(1)] = value;
         }
-    }
-
-    public float[] Activations {
-        get { return _a; }
-    }
-
-    public float[] Z {
-        get { return _z; }
-    }
-
-    public StochasticWeightBiasLayer(int size, int inputs, Func<float, float> activation) {
-        _a = new float[size];
-        _z = new float[size];
-        _b = new float[size, 2];
-        _w = new float[size, inputs];
-        _act = activation;
-    }
-
-    public float[] Forward(float[] input) {
-        if (_w.GetLength(1) != input.Length) {
-            throw new ArgumentException("Number of inputs from last layer does not match number of weights from this layer");
-        }
-
-        for (int n = 0; n < _a.Length; n++) {
-            float a = 0f;
-            for (int w = 0; w < input.Length; w++) {
-                //float wval = Utils.Gaussian(_w[n, w], 0.1f); // Todo: parameterize
-                a += input[w] * _w[n, w];
-            }
-            _z[n] = a + Utils.Gaussian(_b[n, 0], _b[n, 1]);
-            _a[n] = _act(_z[n]);
-        }
-
-        return _a;
     }
 }
 
 public static class NetUtils {
-    public static void Forward(Network network) {
-        float[] input = network.Input;
-        for (int i = 0; i < network.Layers.Count; i++) {
-            input = network.Layers[i].Forward(input);
+    public static void Forward(Network net) {
+        float[] input = net.Input;
+        for (int l = 1; l < net.Layers.Count; l++) {
+            input = net.Layers[l].Forward(input);
         }
     }
 
-    public static void Backward(Network network) {
-        // Todo: implement
+    public static void Backward(Network net, float[] target) {
+        float[] dCdO = new float[target.Length];
+        Mnist.Subtract(target, net.Output, dCdO);
+
+        net.Layers[net.Layers.Count-1].BackwardFinal(net.Layers[net.Layers.Count - 2], dCdO);
+
+        for (int l = net.Layers.Count-2; l > 0; l--) {
+            net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
+        }
     }
 
     public static int GetMaxOutput(Network network) {

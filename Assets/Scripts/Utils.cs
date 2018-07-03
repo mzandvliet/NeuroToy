@@ -28,8 +28,12 @@ public static class Utils {
         }
     }
 
-    public static float Sigmoid(float v) {
-        return 1f / (1f + Mathf.Exp(-v));
+    public static float Sigmoid(float x) {
+        return 1f / (1f + Mathf.Exp(-x));
+    }
+
+    public static float SigmoidD(float sigmoidX) {
+        return sigmoidX * Sigmoid(sigmoidX); // we already know sigmoid(x) from forward pass
     }
 
     public static float Tanh(float v) {
