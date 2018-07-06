@@ -3,8 +3,6 @@ using System.Text;
 using UnityEngine;
 using System.Collections.Generic;
 
-/* Todo: load test and validation data, not just training. */
-
 public struct Dataset {
     public int[] Labels;
     public float[,] Images;
@@ -85,6 +83,8 @@ public class Mnist {
     public static Batch GetBatch(int size, Dataset set, System.Random r) {
         // Todo: can transform dataset to create additional variation
 
+        UnityEngine.Profiling.Profiler.BeginSample("GetBatch");
+            
         if (set.Indices.Count < size) {
             set.Indices.Clear();
             for (int i = 0; i < set.NumImgs; i++) {
@@ -98,6 +98,8 @@ public class Mnist {
             b.Indices[i] = set.Indices[set.Indices.Count-1];
             set.Indices.RemoveAt(set.Indices.Count-1);
         }
+            
+        UnityEngine.Profiling.Profiler.EndSample();
 
         return b;
     }

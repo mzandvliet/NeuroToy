@@ -27,8 +27,10 @@ public class MnistTraining : MonoBehaviour {
     private Network _gradientBucket; // Hack used to store average gradients for minibatch
     [SerializeField] private NeuralNetRenderer _renderer;
 
-    int _batchesTrained;
-    float avgTestAccuracy;
+    int _epoch;
+    int _batch;
+    float _trainingLoss;
+    float _rate;
 
     private void Awake() {
         Application.runInBackground = true;
@@ -52,17 +54,15 @@ public class MnistTraining : MonoBehaviour {
     }
 
     private void TrainMinibatch() {
+        UnityEngine.Profiling.Profiler.BeginSample("TrainMiniBatch");
+
         const int numClasses = 10;
         const int batchSize = 10;
-        
-
         var target = new float[numClasses];
         var dCdO = new float[numClasses];
 
         float avgTrainCost = 0f;
-        float avgTestCost = 0f;
         int correctTrainLabels = 0;
-        int correctTestLabels = 0;
 
         ZeroGradients(_gradientBucket);
         var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
@@ -70,9 +70,13 @@ public class MnistTraining : MonoBehaviour {
             int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
 
             // Copy image to input layer (Todo: this is a waste of time/memory)
+            UnityEngine.Profiling.Profiler.BeginSample("CopyInputs");
+                
             for (int p = 0; p < Mnist.Train.ImgDims; p++) {
                 _net.Input[p] = Mnist.Train.Images[trainBatch.Indices[i], p];
             }
+                
+            UnityEngine.Profiling.Profiler.EndSample();
 
             NetUtils.Forward(_net);
 
@@ -96,54 +100,55 @@ public class MnistTraining : MonoBehaviour {
             AddGradients(_net, _gradientBucket);
         }
 
-        var testBatch = Mnist.GetBatch(batchSize, Mnist.Test, _random);
-        for (int i = 0; i < testBatch.Indices.Length; i++) {
-            int lbl = Mnist.Test.Labels[testBatch.Indices[i]];
+        avgTrainCost /= (float)batchSize;
+        DivideGradients(_gradientBucket, (float)batchSize);
+
+        // Update weights and biases according to averaged gradient and learning rate
+        _rate = 3.0f;
+        NetUtils.UpdateParameters(_net, _gradientBucket, _rate);
+
+        _batch++;
+        _trainingLoss = (float)Math.Round(avgTrainCost, 6);
+
+        // Debug.Log(
+        //     "Batch: " + _batchesTrained +
+        //     ", TrainLoss: " + Math.Round(avgTrainCost, 6) +
+        //     ", Rate: " + Math.Round(rate, 6));
+        // Mnist.ToTexture(batch, batch.Labels.Length-1, _tex);
+        // _label = batch.Labels[batch.Labels.Length-1];
+
+        UnityEngine.Profiling.Profiler.EndSample();
+    }
+
+    private void Test() {
+        UnityEngine.Profiling.Profiler.BeginSample("Test");
+            
+        int correctTestLabels = 0;
+        for (int i = 0; i < Mnist.Test.NumImgs; i++) {
+            int lbl = Mnist.Test.Labels[i];
 
             // Copy image to input layer (Todo: this is a waste of time/memory)
             for (int p = 0; p < Mnist.Test.ImgDims; p++) {
-                _net.Input[p] = Mnist.Test.Images[testBatch.Indices[i], p];
+                _net.Input[p] = Mnist.Test.Images[i, p];
             }
 
             NetUtils.Forward(_net);
-
             int predictedLbl = NetUtils.GetMaxOutput(_net);
-            Mnist.LabelToVector(lbl, target);
 
             if (predictedLbl == lbl) {
                 correctTestLabels++;
             }
-
-            // Calculate error between output layer and target
-            Mnist.Subtract(target, _net.Output, dCdO);
-            float cost = Mnist.Cost(dCdO);
-            avgTestCost += cost;
         }
 
-        avgTrainCost /= (float)batchSize;
-        avgTestCost /= (float)batchSize;
-        avgTestAccuracy = 0.9f * avgTestAccuracy + 0.1f * (correctTestLabels / (float)batchSize);
-        DivideGradients(_gradientBucket, (float)batchSize);
-
-        // Update weights and biases according to averaged gradient and learning rate
-        float rate = 3.0f * (1f - 0.9f * Mathf.Clamp01(_batchesTrained / 99999f));
-        NetUtils.UpdateParameters(_net, _gradientBucket, rate);
-
-        _batchesTrained++;
-
-        Debug.Log(
-            "Batch: " + _batchesTrained +
-            ", TrainLoss: " + Math.Round(avgTrainCost, 6) + ", TestLoss: " + Math.Round(avgTestCost, 6) +
-            ", Train: " + correctTrainLabels + "/" + batchSize +
-            ", Test: " + correctTestLabels + "/" + batchSize +
-            ", AvgAcc: " + Math.Round(avgTestAccuracy * 100f) + "%" +
-            ", Rate: " + Math.Round(rate, 6));
-        
-        // Mnist.ToTexture(batch, batch.Labels.Length-1, _tex);
-        // _label = batch.Labels[batch.Labels.Length-1];
+        float accuracy = correctTestLabels / (float)Mnist.Test.NumImgs;
+        Debug.Log("Test Accuracy: " + Math.Round(accuracy * 100f) + "%");
+            
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private static void ZeroGradients(Network bucket) {
+        UnityEngine.Profiling.Profiler.BeginSample("Zero");
+            
         for (int l = 1; l < bucket.Layers.Count; l++) {
             for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
                 bucket.Layers[l].DCDZ[n] = 0f;
@@ -152,9 +157,13 @@ public class MnistTraining : MonoBehaviour {
                 }
             }
         }
+            
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private static void AddGradients(Network values, Network bucket) {
+        UnityEngine.Profiling.Profiler.BeginSample("AddGradients");
+            
         for (int l = 1; l < bucket.Layers.Count; l++) {
             for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
                 bucket.Layers[l].DCDZ[n] += values.Layers[l].DCDZ[n];
@@ -163,9 +172,13 @@ public class MnistTraining : MonoBehaviour {
                 }
             }
         }
+            
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private static void DivideGradients(Network bucket, float factor) {
+        UnityEngine.Profiling.Profiler.BeginSample("DivideGradients");
+            
         for (int l = 1; l < bucket.Layers.Count; l++) {
             for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
                 bucket.Layers[l].DCDZ[n] /= factor;
@@ -174,9 +187,13 @@ public class MnistTraining : MonoBehaviour {
                 }
             }
         }
+            
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private static void ClipGradients(Network bucket) {
+        UnityEngine.Profiling.Profiler.BeginSample("ClipGradients");
+            
         for (int l = 1; l < bucket.Layers.Count; l++) {
             for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
                 bucket.Layers[l].DCDZ[n] = Mathf.Clamp(bucket.Layers[l].DCDZ[n], -1.0f, 1.0f);
@@ -185,18 +202,35 @@ public class MnistTraining : MonoBehaviour {
                 }
             }
         }
+            
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private void Update() {
-        if (_batchesTrained < 30 * 6000) {
-            for (int i = 0; i < 16; i++) {
-                TrainMinibatch();
+        if (_epoch < 30) {
+            if (_batch < 6000) {
+                for (int i = 0; i < 10; i++) {
+                    TrainMinibatch();
+                }
+            } else {
+                Test();
+                _batch = 0;
+                _epoch++;
             }
         }
     }
 
     private void OnGUI() {
-        GUI.Label(new Rect(0f, 32f, 280f, 32f), "Label: " + _label);
-        GUI.DrawTexture(new Rect(0f, 64f, 280f, 280f), _tex, ScaleMode.ScaleToFit);
+        GUILayout.BeginVertical(GUI.skin.box);
+        {
+            GUILayout.Label("Epoch: " + _epoch);
+            GUILayout.Label("Batch: " + _batch);
+            GUILayout.Label("Train Loss: " + _trainingLoss);
+            GUILayout.Label("Rate: " + _rate);
+        }
+        GUILayout.EndVertical();
+
+        // GUI.Label(new Rect(0f, 32f, 280f, 32f), "Label: " + _label);
+        // GUI.DrawTexture(new Rect(0f, 64f, 280f, 280f), _tex, ScaleMode.ScaleToFit);
     }
 }

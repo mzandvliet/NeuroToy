@@ -333,13 +333,19 @@ public class DeterministicWeightBiasLayer : ILayer {
 
 public static class NetUtils {
     public static void Forward(Network net) {
+        UnityEngine.Profiling.Profiler.BeginSample("Forward");
+
         float[] input = net.Input;
         for (int l = 1; l < net.Layers.Count; l++) {
             input = net.Layers[l].Forward(input);
         }
+
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     public static void Backward(Network net, float[] target) {
+        UnityEngine.Profiling.Profiler.BeginSample("Backward");
+            
         float[] dCdO = new float[target.Length];
         Mnist.Subtract(net.Output, target, dCdO);
 
@@ -348,9 +354,13 @@ public static class NetUtils {
         for (int l = net.Layers.Count-2; l > 0; l--) {
             net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
         }
+            
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     public static void UpdateParameters(Network net, Network gradients, float learningRate) {
+        UnityEngine.Profiling.Profiler.BeginSample("UpdateParameters");
+            
         for (int l = 1; l < net.Layers.Count; l++) {
             for (int n = 0; n < net.Layers[l].NeuronCount; n++) {
                 net.Layers[l].Biases[n] -= gradients.Layers[l].DCDZ[n] * learningRate;
@@ -360,6 +370,8 @@ public static class NetUtils {
                 }
             }
         }
+            
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     public static int GetMaxOutput(Network network) {
@@ -374,7 +386,6 @@ public static class NetUtils {
         return idx;
     }
 
-    public const float WMax = 1f;
     public const float PMax = 1f;
 
     public static void Zero(Network network) {
@@ -403,76 +414,77 @@ public static class NetUtils {
         }
     }
 
-    // public static void Serialize(FeedForwardNetwork net) {
-    //     FileStream stream = new FileStream("E:\\code\\unity\\NeuroParty\\Nets\\Test.Net", FileMode.Create);
-    //     BinaryWriter writer = new BinaryWriter(stream);
+    public static void Serialize(Network net) {
+        // FileStream stream = new FileStream("E:\\code\\unity\\NeuroParty\\Nets\\Test.Net", FileMode.Create);
+        // BinaryWriter writer = new BinaryWriter(stream);
 
-    //     // Version Info
+        // // Version Info
 
-    //     writer.Write(1);
+        // writer.Write(1);
 
-    //     // Topology
+        // // Topology
 
-    //     writer.Write(net.Topology.Length);
-    //     for (int i = 0; i < net.Topology.Length; i++) {
-    //         writer.Write(net.Topology[i]);
-    //     }
+        // writer.Write(net.Topology.Length);
+        // for (int i = 0; i < net.Topology.Length; i++) {
+        //     writer.Write(net.Topology[i]);
+        // }
 
-    //     for (int l = 0; l < net.Topology.Length; l++) {
-    //         for (int n = 0; n < net.Topology[l]; n++) {
-    //             writer.Write(net.B[l][n]);
-    //         }
+        // for (int l = 0; l < net.Topology.Length; l++) {
+        //     for (int n = 0; n < net.Topology[l]; n++) {
+        //         writer.Write(net.B[l][n]);
+        //     }
 
-    //         if (l > 0) {
-    //             for (int n = 0; n < net.W[l].Length; n++) {
-    //                 for (int w = 0; w < net.W[l][n].Length; w++) {
-    //                     writer.Write(net.W[l][n][w]);
-    //                 }
-    //             }
-    //         }
-    //     }
+        //     if (l > 0) {
+        //         for (int n = 0; n < net.W[l].Length; n++) {
+        //             for (int w = 0; w < net.W[l][n].Length; w++) {
+        //                 writer.Write(net.W[l][n][w]);
+        //             }
+        //         }
+        //     }
+        // }
 
-    //     writer.Close();
-    // }
+        // writer.Close();
+    }
 
-    // public static Network Deserialize() {
-    //     FileStream stream = new FileStream("E:\\code\\unity\\NeuroParty\\Nets\\Test.Net", FileMode.Open);
-    //     BinaryReader reader = new BinaryReader(stream);
+    public static Network Deserialize() {
+        // FileStream stream = new FileStream("E:\\code\\unity\\NeuroParty\\Nets\\Test.Net", FileMode.Open);
+        // BinaryReader reader = new BinaryReader(stream);
 
-    //     // Version Info
+        // // Version Info
 
-    //     int version = reader.ReadInt32();
-    //     Debug.Log("Net Version:" + version);
+        // int version = reader.ReadInt32();
+        // Debug.Log("Net Version:" + version);
 
-    //     // Topology
+        // // Topology
 
-    //     int numLayers = reader.ReadInt32();
-    //     int[] topology = new int[numLayers];
-    //     for (int i = 0; i < numLayers; i++) {
-    //         topology[i] = reader.ReadInt32();
-    //     }
+        // int numLayers = reader.ReadInt32();
+        // int[] topology = new int[numLayers];
+        // for (int i = 0; i < numLayers; i++) {
+        //     topology[i] = reader.ReadInt32();
+        // }
 
-    //     Network net = new Network(topology);
+        // Network net = new Network(topology);
 
-    //     for (int l = 0; l < topology.Length; l++) {
-    //         for (int n = 0; n < net.Topology[l]; n++) {
-    //             net.B[l][n] = reader.ReadSingle();
-    //         }
+        // for (int l = 0; l < topology.Length; l++) {
+        //     for (int n = 0; n < net.Topology[l]; n++) {
+        //         net.B[l][n] = reader.ReadSingle();
+        //     }
 
 
-    //         if (l > 0) {
-    //             for (int n = 0; n < net.W[l].Length; n++) {
-    //                 for (int w = 0; w < net.W[l][n].Length; w++) {
-    //                     net.W[l][n][w] = reader.ReadSingle();
-    //                 }
-    //             }
-    //         }
-    //     }
+        //     if (l > 0) {
+        //         for (int n = 0; n < net.W[l].Length; n++) {
+        //             for (int w = 0; w < net.W[l][n].Length; w++) {
+        //                 net.W[l][n][w] = reader.ReadSingle();
+        //             }
+        //         }
+        //     }
+        // }
 
-    //     reader.Close();
+        // reader.Close();
 
-    //     return net;
-    // }
+        // return net;
+        return null;
+    }
 
     #region Genetic Algorithm
 
