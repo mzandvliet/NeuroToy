@@ -172,7 +172,7 @@ public class MnistTraining : MonoBehaviour {
             for (int n = 0; n < nCount; n++) {
                 dCdZGradients[n] += dCdZNet[n];
                 var dCdWGradients = gradients.Layers[l].DCDW;
-                var dCdWNet = gradients.Layers[l].DCDW;
+                var dCdWNet = net.Layers[l].DCDW;
                 var wCount = gradients.Layers[l - 1].NeuronCount;
                 for (int w = 0; w < wCount; w++) {
                     dCdWGradients[n, w] += dCdWNet[n, w];
