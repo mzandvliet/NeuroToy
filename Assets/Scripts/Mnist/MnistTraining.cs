@@ -54,7 +54,7 @@ public class MnistTraining : MonoBehaviour {
     private void TrainMinibatch() {
         const int numClasses = 10;
         const int batchSize = 10;
-        var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
+        
 
         var target = new float[numClasses];
         var dCdO = new float[numClasses];
@@ -65,7 +65,7 @@ public class MnistTraining : MonoBehaviour {
         int correctTestLabels = 0;
 
         ZeroGradients(_gradientBucket);
-
+        var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
         for (int i = 0; i < trainBatch.Indices.Length; i++) {
             int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
 
