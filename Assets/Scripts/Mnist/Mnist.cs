@@ -44,7 +44,7 @@ public class Mnist {
 
     public static void Load() {
         Train = Load(TrainImagePath, TrainLabelPath);
-        //Test = Load(TestImagePath, TestLabelPath);
+        Test = Load(TestImagePath, TestLabelPath);
     }
 
     private static Dataset Load(string imgPath, string lblPath) {
@@ -85,7 +85,6 @@ public class Mnist {
         Batch b = new Batch(size);
         for (int i = 0; i < size; i++) {
             b.Indices[i] = r.Next(set.NumImgs);
-            
         }
 
         return b;

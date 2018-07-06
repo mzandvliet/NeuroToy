@@ -53,22 +53,24 @@ public class MnistTraining : MonoBehaviour {
     private void TrainMinibatch() {
         const int numClasses = 10;
         const int batchSize = 10;
-        var batch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
+        var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
 
         var target = new float[numClasses];
         var dCdO = new float[numClasses];
 
-        float avgBatchCost = 0f;
-        int correctLabels = 0;
+        float avgTrainCost = 0f;
+        float avgTestCost = 0f;
+        int correctTrainLabels = 0;
+        int correctTestLabels = 0;
 
         ZeroGradients(_gradientBucket);
 
-        for (int i = 0; i < batch.Indices.Length; i++) {
-            int lbl = Mnist.Train.Labels[batch.Indices[i]];
+        for (int i = 0; i < trainBatch.Indices.Length; i++) {
+            int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
 
             // Copy image to input layer (Todo: this is a waste of time/memory)
             for (int p = 0; p < Mnist.Train.ImgDims; p++) {
-                _net.Input[p] = Mnist.Train.Images[batch.Indices[i], p];
+                _net.Input[p] = Mnist.Train.Images[trainBatch.Indices[i], p];
             }
 
             NetUtils.Forward(_net);
@@ -77,14 +79,14 @@ public class MnistTraining : MonoBehaviour {
             Mnist.LabelToVector(lbl, target);
 
             if (predictedLbl == lbl) {
-                correctLabels++;
+                correctTrainLabels++;
             }
             //Debug.Log(outputClass + ", " + batch.Labels[i]);
 
             // Calculate error between output layer and target
             Mnist.Subtract(target, _net.Output, dCdO);
             float cost = Mnist.Cost(dCdO);
-            avgBatchCost += cost;
+            avgTrainCost += cost;
 
             // Propagate error back
             // Calculate per-parameter gradient, store it
@@ -93,7 +95,32 @@ public class MnistTraining : MonoBehaviour {
             AddGradients(_net, _gradientBucket);
         }
 
-        avgBatchCost /= (float)batchSize;
+        var testBatch = Mnist.GetBatch(batchSize, Mnist.Test, _random);
+        for (int i = 0; i < testBatch.Indices.Length; i++) {
+            int lbl = Mnist.Train.Labels[testBatch.Indices[i]];
+
+            // Copy image to input layer (Todo: this is a waste of time/memory)
+            for (int p = 0; p < Mnist.Test.ImgDims; p++) {
+                _net.Input[p] = Mnist.Test.Images[testBatch.Indices[i], p];
+            }
+
+            NetUtils.Forward(_net);
+
+            int predictedLbl = NetUtils.GetMaxOutput(_net);
+            Mnist.LabelToVector(lbl, target);
+
+            if (predictedLbl == lbl) {
+                correctTestLabels++;
+            }
+
+            // Calculate error between output layer and target
+            Mnist.Subtract(target, _net.Output, dCdO);
+            float cost = Mnist.Cost(dCdO);
+            avgTestCost += cost;
+        }
+
+        avgTrainCost /= (float)batchSize;
+        avgTestCost /= (float)batchSize;
         DivideGradients(_gradientBucket, (float)batchSize);
 
         // Update weights and biases according to averaged gradient and learning rate
@@ -102,7 +129,13 @@ public class MnistTraining : MonoBehaviour {
 
         _batchesTrained++;
 
-        Debug.Log("Batch: " + _batchesTrained + ", Cost: " + avgBatchCost + ", Correct: " + correctLabels + "/" + batchSize + " Rate: " + rate);
+        Debug.Log(
+            "Batch: " + _batchesTrained +
+            ", TrainLoss: " + Math.Round(avgTrainCost, 6) + ", TestLoss: " + Math.Round(avgTestCost, 6) +
+            ", Train: " + correctTrainLabels + "/" + batchSize +
+            ", Test: " + correctTestLabels + "/" + batchSize +
+            ", Rate: " + Math.Round(rate, 6));
+        
         // Mnist.ToTexture(batch, batch.Labels.Length-1, _tex);
         // _label = batch.Labels[batch.Labels.Length-1];
     }
