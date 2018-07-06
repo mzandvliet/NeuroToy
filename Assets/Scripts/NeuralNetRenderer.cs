@@ -72,7 +72,7 @@ public class NeuralNetRenderer : MonoBehaviour {
                     Color wCol = wVal > 0f ? 
                         Color.Lerp(Color.white, Color.blue, Mathf.Clamp01(wVal)) :
                         Color.Lerp(Color.white, Color.red, Mathf.Clamp01(-wVal));
-                    //wCol.a = synAct;
+                    wCol.a = synAct;
                     float width = 0.3f;
                     Drawing.DrawLine(prevNPos, curNPos, wCol, width, true);
                 }

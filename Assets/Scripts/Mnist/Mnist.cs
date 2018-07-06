@@ -4,90 +4,105 @@ using UnityEngine;
 
 /* Todo: load test and validation data, not just training. */
 
+public struct Dataset {
+    public int[] Labels;
+    public float[,] Images;
+
+    public int NumImgs {
+        get { return Labels.Length; }
+    }
+
+    public int Rows {
+        get;
+        private set;
+    }
+    public int Cols {
+        get;
+        private set;
+    }
+    public int ImgDims {
+        get { return Rows * Cols; }
+    }
+
+    public Dataset(int count, int rows, int cols) {
+        Labels = new int[count];
+        Images = new float[count, rows * cols];
+        Rows = rows;
+        Cols = cols;
+    }
+}
+
 public class Mnist {
     private const string Folder = "F:\\datasets\\mnist";
-    private const string ImagePath = "train-images.idx3-ubyte";
-    private const string LabelPath = "train-labels.idx1-ubyte";
+    private const string TrainImagePath = "train-images.idx3-ubyte";
+    private const string TrainLabelPath = "train-labels.idx1-ubyte";
+    private const string TestImagePath = "t10k-images.idx3-ubyte";
+    private const string TestLabelPath = "t10k-labels.idx1-ubyte";
 
-    public static int NumImgs = -1;
-    public static int Rows = -1;
-    public static int Cols = -1;
-    public static int ImgDims = -1;
+    public static Dataset Train;
+    public static Dataset Test;
 
-    public static void Load(out float[] pixels, out int[] labels) {
-        var lblReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, LabelPath), FileMode.Open));
-        var imgReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, ImagePath), FileMode.Open));
+    public static void Load() {
+        Train = Load(TrainImagePath, TrainLabelPath);
+        //Test = Load(TestImagePath, TestLabelPath);
+    }
+
+    private static Dataset Load(string imgPath, string lblPath) {
+        var lblReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, lblPath), FileMode.Open));
+        var imgReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, imgPath), FileMode.Open));
 
         lblReader.ReadInt32();
         lblReader.ReadInt32();
 
         int magicNum = imgReader.ReadInt32();
-        NumImgs = imgReader.ReadInt32();
-        Rows = imgReader.ReadInt32();
-        Cols = imgReader.ReadInt32();
-        ImgDims = Rows * Cols;
+        int NumImgs = imgReader.ReadInt32();
+        int Rows = imgReader.ReadInt32();
+        int Cols = imgReader.ReadInt32();
+        int ImgDims = Rows * Cols;
 
-        Debug.Log("Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
+        Debug.Log("Loading " + imgPath + ", Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
 
-        labels = new int[NumImgs];
+        var set = new Dataset(NumImgs, Rows, Cols);
+
         for (int i = 0; i < NumImgs; i++) {
             byte lbl = lblReader.ReadByte();
-            labels[i] = (int)lbl;
+            set.Labels[i] = (int)lbl;
         }
 
-        pixels = new float[NumImgs * Rows * Cols];
-
-        for (int i = 0; i < pixels.Length; i++) {
-            byte pix = imgReader.ReadByte();
-            pixels[i] = pix / 256f;
+        for (int i = 0; i < NumImgs; i++) {
+            for (int j = 0; j < ImgDims; j++) {
+                byte pix = imgReader.ReadByte();
+                set.Images[i,j] = pix / 256f;
+            }
         }
+
+        return set;
     }
 
-    // Todo: since all training data is in memory, and is readonly, why even copy it? Just return
-    // a random subset of indices
-    public static Batch GetBatch(int size, float[] pixels, int[] labels, System.Random r) {
+    public static Batch GetBatch(int size, Dataset set, System.Random r) {
+        // Todo: can transform dataset to create additional variation
+
         Batch b = new Batch(size);
         for (int i = 0; i < size; i++) {
-            int randIndex = r.Next(Mnist.NumImgs);
-
-            b.Labels[i] = labels[randIndex];
-            for (int j = 0; j < ImgDims; j++) {
-                b.Images[i][j] = pixels[randIndex * ImgDims + j];
-            }
+            b.Indices[i] = r.Next(set.NumImgs);
+            
         }
 
         return b;
     }
 
-    public static void ToTexture(float[] pixels, int imgIndex, Texture2D tex) {
-        var colors = new Color[Rows * Cols];
+    public static void ToTexture(Dataset set, int imgIndex, Texture2D tex) {
+        var colors = new Color[set.ImgDims];
 
-        int firstPix = imgIndex * Rows * Cols;
-
-        for (int y = 0; y < Cols; y++) {
-            for (int x = 0; x < Rows; x++) {
-                float pix = pixels[firstPix + y * Cols + x]; //  / 256f
+        for (int y = 0; y < set.Cols; y++) {
+            for (int x = 0; x < set.Rows; x++) {
+                float pix = set.Images[imgIndex, y * set.Cols + x]; //  / 256f
                 // Invert y
-                colors[(Cols-1-y) * Cols + x] = new Color(pix, pix, pix, 1f);
+                colors[(set.Cols-1-y) * set.Cols + x] = new Color(pix, pix, pix, 1f);
             }
         }
 
-        tex.SetPixels(0, 0, Rows, Cols, colors);
-        tex.Apply(false);
-    }
-
-    public static void ToTexture(Batch b, int imgIndex, Texture2D tex) {
-        var colors = new Color[Rows * Cols];
-
-        for (int y = 0; y < Cols; y++) {
-            for (int x = 0; x < Rows; x++) {
-                float pix = b.Images[imgIndex][ y * Cols + x]; //  / 256f
-                // Invert y
-                colors[(Cols - 1 - y) * Cols + x] = new Color(pix, pix, pix, 1f);
-            }
-        }
-
-        tex.SetPixels(0, 0, Rows, Cols, colors);
+        tex.SetPixels(0, 0, set.Rows, set.Cols, colors);
         tex.Apply(false);
     }
 
@@ -159,14 +174,9 @@ class BigEndianBinaryReader : BinaryReader {
 }
 
 public class Batch {
-    public float[][] Images;
-    public int[] Labels;
+    public int[] Indices;
 
     public Batch(int size) {
-        Images = new float[size][];
-        for (int i = 0; i < size; i++) {
-            Images[i] = new float[28*28];
-        }
-        Labels = new int[size];
+        Indices = new int[size];
     }
 }

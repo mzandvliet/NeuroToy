@@ -24,6 +24,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using Random = System.Random;
 
@@ -313,26 +314,17 @@ public class DeterministicWeightBiasLayer : ILayer {
         }
     }
 
-    /*
-    float deltaCost_deltaO = 0.0f;
-    for (size_t destinationNeuronIndex = 0; destinationNeuronIndex < OUTPUT_NEURONS; ++destinationNeuronIndex)
-        deltaCost_deltaO += m_outputLayerBiasesDeltaCost[destinationNeuronIndex] * m_outputLayerWeights[OutputLayerWeightIndex(neuronIndex, destinationNeuronIndex)];
-    
-    float deltaO_deltaZ = m_hiddenLayerOutputs[neuronIndex] * (1.0f - m_hiddenLayerOutputs[neuronIndex]);
-    m_hiddenLayerBiasesDeltaCost[neuronIndex] = deltaCost_deltaO * deltaO_deltaZ;
-    */
-
     public void Backward(ILayer prev, ILayer next) {
         for (int n = 0; n < _o.Length; n++) {
             float dOdZ = _actD(_o[n]);
 
             _dCdZ[n] = 0f;
-            for (int nNext = 0; nNext < next.Outputs.Length; nNext++) {
+            for (int nNext = 0; nNext < next.NeuronCount; nNext++) {
                 _dCdZ[n] += next.DCDZ[nNext] * next.Weights[nNext, n];
             }
             _dCdZ[n] *= dOdZ;
 
-            for (int w = 0; w < prev.Outputs.Length; w++) {
+            for (int w = 0; w < prev.NeuronCount; w++) {
                 _dWdC[n, w] = _dCdZ[n] * prev.Outputs[w];
             }
         }
@@ -351,13 +343,11 @@ public static class NetUtils {
         float[] dCdO = new float[target.Length];
         Mnist.Subtract(net.Output, target, dCdO);
 
-        net.Layers[2].BackwardFinal(net.Layers[1], dCdO);
+        net.Layers[net.Layers.Count-1].BackwardFinal(net.Layers[net.Layers.Count - 2], dCdO);
 
-        // for (int l = net.Layers.Count-2; l > 0; l--) {
-        //     net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
-        // }
-
-        net.Layers[1].Backward(net.Layers[0], net.Layers[2]);
+        for (int l = net.Layers.Count-2; l > 0; l--) {
+            net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
+        }
     }
 
     public static void UpdateParameters(Network net, Network gradients, float learningRate) {
@@ -395,10 +385,10 @@ public static class NetUtils {
         }
     }
 
-    public static void Randomize(Network network, Random r) {
+    public static void RandomGaussian(Network network, Random r) {
         for (int l = 0; l < network.Layers.Count; l++) {
             for (int p = 0; p < network.Layers[l].ParamCount; p++) {
-                network.Layers[l][p] = Utils.Gaussian(r);
+                network.Layers[l][p] = Utils.Gaussian(r, 0f, 1f);
             }
         }
     }
@@ -412,6 +402,77 @@ public static class NetUtils {
             }
         }
     }
+
+    // public static void Serialize(FeedForwardNetwork net) {
+    //     FileStream stream = new FileStream("E:\\code\\unity\\NeuroParty\\Nets\\Test.Net", FileMode.Create);
+    //     BinaryWriter writer = new BinaryWriter(stream);
+
+    //     // Version Info
+
+    //     writer.Write(1);
+
+    //     // Topology
+
+    //     writer.Write(net.Topology.Length);
+    //     for (int i = 0; i < net.Topology.Length; i++) {
+    //         writer.Write(net.Topology[i]);
+    //     }
+
+    //     for (int l = 0; l < net.Topology.Length; l++) {
+    //         for (int n = 0; n < net.Topology[l]; n++) {
+    //             writer.Write(net.B[l][n]);
+    //         }
+
+    //         if (l > 0) {
+    //             for (int n = 0; n < net.W[l].Length; n++) {
+    //                 for (int w = 0; w < net.W[l][n].Length; w++) {
+    //                     writer.Write(net.W[l][n][w]);
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     writer.Close();
+    // }
+
+    // public static Network Deserialize() {
+    //     FileStream stream = new FileStream("E:\\code\\unity\\NeuroParty\\Nets\\Test.Net", FileMode.Open);
+    //     BinaryReader reader = new BinaryReader(stream);
+
+    //     // Version Info
+
+    //     int version = reader.ReadInt32();
+    //     Debug.Log("Net Version:" + version);
+
+    //     // Topology
+
+    //     int numLayers = reader.ReadInt32();
+    //     int[] topology = new int[numLayers];
+    //     for (int i = 0; i < numLayers; i++) {
+    //         topology[i] = reader.ReadInt32();
+    //     }
+
+    //     Network net = new Network(topology);
+
+    //     for (int l = 0; l < topology.Length; l++) {
+    //         for (int n = 0; n < net.Topology[l]; n++) {
+    //             net.B[l][n] = reader.ReadSingle();
+    //         }
+
+
+    //         if (l > 0) {
+    //             for (int n = 0; n < net.W[l].Length; n++) {
+    //                 for (int w = 0; w < net.W[l][n].Length; w++) {
+    //                     net.W[l][n][w] = reader.ReadSingle();
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     reader.Close();
+
+    //     return net;
+    // }
 
     #region Genetic Algorithm
 

@@ -65,7 +65,7 @@ public class LocoApplication : MonoBehaviour {
         // Create a random genotype to seed the population
         Debug.Log("Network topology: " + _creatures[0].Body.NetDefinition);
         _genotype = NetBuilder.Build(_creatures[0].Body.NetDefinition);
-        NetUtils.Randomize(_genotype, _random);
+        NetUtils.RandomGaussian(_genotype, _random);
 
         PrepareNewEpisode();
         MutatePopulation();
