@@ -28,6 +28,7 @@ public class MnistTraining : MonoBehaviour {
     [SerializeField] private NeuralNetRenderer _renderer;
 
     int _batchesTrained;
+    float avgTestAccuracy;
 
     private void Awake() {
         Application.runInBackground = true;
@@ -121,6 +122,7 @@ public class MnistTraining : MonoBehaviour {
 
         avgTrainCost /= (float)batchSize;
         avgTestCost /= (float)batchSize;
+        avgTestAccuracy = 0.9f * avgTestAccuracy + 0.1f * (correctTestLabels / (float)batchSize);
         DivideGradients(_gradientBucket, (float)batchSize);
 
         // Update weights and biases according to averaged gradient and learning rate
@@ -134,6 +136,7 @@ public class MnistTraining : MonoBehaviour {
             ", TrainLoss: " + Math.Round(avgTrainCost, 6) + ", TestLoss: " + Math.Round(avgTestCost, 6) +
             ", Train: " + correctTrainLabels + "/" + batchSize +
             ", Test: " + correctTestLabels + "/" + batchSize +
+            ", AvgAcc: " + Math.Round(avgTestAccuracy * 100f) + "%" +
             ", Rate: " + Math.Round(rate, 6));
         
         // Mnist.ToTexture(batch, batch.Labels.Length-1, _tex);
