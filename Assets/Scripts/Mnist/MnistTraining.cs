@@ -97,7 +97,7 @@ public class MnistTraining : MonoBehaviour {
 
         var testBatch = Mnist.GetBatch(batchSize, Mnist.Test, _random);
         for (int i = 0; i < testBatch.Indices.Length; i++) {
-            int lbl = Mnist.Train.Labels[testBatch.Indices[i]];
+            int lbl = Mnist.Test.Labels[testBatch.Indices[i]];
 
             // Copy image to input layer (Todo: this is a waste of time/memory)
             for (int p = 0; p < Mnist.Test.ImgDims; p++) {
