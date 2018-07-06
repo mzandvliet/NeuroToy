@@ -161,14 +161,21 @@ public class MnistTraining : MonoBehaviour {
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
-    private static void AddGradients(Network values, Network bucket) {
+    private static void AddGradients(Network net, Network gradients) {
         UnityEngine.Profiling.Profiler.BeginSample("AddGradients");
-            
-        for (int l = 1; l < bucket.Layers.Count; l++) {
-            for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
-                bucket.Layers[l].DCDZ[n] += values.Layers[l].DCDZ[n];
-                for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
-                    bucket.Layers[l].DCDW[n, w] += values.Layers[l].DCDW[n, w];
+        
+        var lCount = gradients.Layers.Count;
+        for (int l = 1; l < lCount; l++) {
+            var dCdZGradients = gradients.Layers[l].DCDZ;
+            var dCdZNet = net.Layers[l].DCDZ;
+            var nCount = gradients.Layers[l].NeuronCount;
+            for (int n = 0; n < nCount; n++) {
+                dCdZGradients[n] += dCdZNet[n];
+                var dCdWGradients = gradients.Layers[l].DCDW;
+                var dCdWNet = gradients.Layers[l].DCDW;
+                var wCount = gradients.Layers[l - 1].NeuronCount;
+                for (int w = 0; w < wCount; w++) {
+                    dCdWGradients[n, w] += dCdWNet[n, w];
                 }
             }
         }
