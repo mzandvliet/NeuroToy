@@ -130,7 +130,7 @@ public class Mnist {
         tex.Apply(false);
     }
 
-    public static void LabelToVector(int label, float[] vector) {
+    public static void LabelToOneHot(int label, float[] vector) {
         for (int i = 0; i < vector.Length; i++) {
             vector[i] = i == label ? 1f : 0f;
         }
@@ -151,7 +151,7 @@ public class Mnist {
         for (int i = 0; i < vector.Length; i++) {
             sum += vector[i] * vector[i];
         }
-        return 0.5f * sum;
+        return Mathf.Sqrt(sum);
     }
 }
 

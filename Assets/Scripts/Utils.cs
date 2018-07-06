@@ -33,7 +33,7 @@ public static class Utils {
     }
 
     public static float SigmoidD(float sigmoidX) {
-        return sigmoidX * Sigmoid(sigmoidX); // we already know sigmoid(x) from forward pass
+        return sigmoidX * (1.0f - sigmoidX); // we already know sigmoid(x) from forward pass
     }
 
     public static float Tanh(float v) {
@@ -42,16 +42,6 @@ public static class Utils {
 
     public static float RandPolar(System.Random r) {
         return (float)(-1.0 + 2.0 * r.NextDouble());
-    }
-
-    public static float Gaussian(System.Random r) {
-        //uniform(0,1] random doubles
-        double u1 = 1.0 - r.NextDouble();
-        double u2 = 1.0 - r.NextDouble();
-        //random normal(0,1)
-        return (float)(
-            Math.Sqrt(-2.0 * Math.Log(u1)) *
-            Math.Sin(2.0 * Math.PI * u2));
     }
 
     // Todo: This is an expensive operation, we can optimize if needed

@@ -56,7 +56,7 @@ public struct LayerDefinition {
 public interface ILayer {
     float[] Forward(float[] input);
     void Backward(ILayer prev, ILayer next);
-    void BackwardFinal(ILayer prev, float[] dCdO);
+    void BackwardFinal(ILayer prev, float[] target);
 
     float[] Outputs { get; }
     float[,] Weights { get; }
@@ -303,7 +303,10 @@ public class DeterministicWeightBiasLayer : ILayer {
         return _o;
     }
 
-    public void BackwardFinal(ILayer prev, float[] dCdO) {
+    public void BackwardFinal(ILayer prev, float[] target) {
+        float[] dCdO = new float[target.Length];
+        Mnist.Subtract(_o, target, dCdO);
+
         for (int n = 0; n < _o.Length; n++) {
             float dOdZ = _actD(_o[n]); // Reuses forward pass evaluation of act(z)
             _dCdZ[n] = dCdO[n] * dOdZ;
@@ -346,10 +349,9 @@ public static class NetUtils {
     public static void Backward(Network net, float[] target) {
         UnityEngine.Profiling.Profiler.BeginSample("Backward");
             
-        float[] dCdO = new float[target.Length];
-        Mnist.Subtract(net.Output, target, dCdO);
+        
 
-        net.Layers[net.Layers.Count-1].BackwardFinal(net.Layers[net.Layers.Count - 2], dCdO);
+        net.Layers[net.Layers.Count-1].BackwardFinal(net.Layers[net.Layers.Count - 2], target);
 
         for (int l = net.Layers.Count-2; l > 0; l--) {
             net.Layers[l].Backward(net.Layers[l - 1], net.Layers[l + 1]);
@@ -506,7 +508,7 @@ public static class NetUtils {
         for (int l = 0; l < network.Layers.Count; l++) {
             for (int p = 0; p < network.Layers[l].ParamCount; p++) {
                 if (r.NextDouble() < chance) {
-                    network.Layers[l][p] = Mathf.Clamp(network.Layers[l][p] + Utils.Gaussian(r) * magnitude, -PMax, PMax);
+                    network.Layers[l][p] = Mathf.Clamp(network.Layers[l][p] + Utils.Gaussian(r, 0.0, 1.0) * magnitude, -PMax, PMax);
                 }
             }
         }
