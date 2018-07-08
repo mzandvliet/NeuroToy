@@ -27,6 +27,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using Random = System.Random;
+using Old;
 
 public enum ActivationType {
     Sigmoid,

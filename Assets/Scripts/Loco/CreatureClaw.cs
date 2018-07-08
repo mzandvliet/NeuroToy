@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using Old;
 
 // Todo: Grabbing requires energy, depletes. Net can read back energy.
 public class CreatureClaw : MonoBehaviour, ISensor, IActuator {

@@ -48,7 +48,7 @@ public class NeuralNetRenderer : MonoBehaviour {
                 float absAct = Mathf.Abs(act);
                 GUI.color = new Color(absAct, absAct, absAct, 1f);
                 GUI.DrawTexture(
-                    new Rect(curNPos.x - 2f, curNPos.y - 2f, 4f, 4f),
+                    new Rect(curNPos.x - 3.5f, curNPos.y - 3.5f, 7f, 7f),
                     _neuronTex);
 
                 if (l < 1) {

@@ -1,7 +1,3 @@
-using UnityEngine;
-using Unity.Jobs;
-using Unity.Collections;
-
 /*
 
 Let's see:
@@ -29,31 +25,82 @@ We know that Burst is optimized for packing lots of small jobs together in time 
 so composing from atomic jobs might not be a bad idea. It also means we get to write
 our algorithms out of those blocks, making experimentation easier.
 
+Todo:
+A matrix multiply for dot producting all inputs with all weights looks like the following:
+tranpose(weights) * input
+
+How should we implement and use the transpose operation? The data remains the same, you're
+just switching rows and columns.
+
+We don't want to manually write out jobs like this all the time, but rather specify
+a computation graph with some notation and have a system that builds the jobs for us.
+
  */
 
+using UnityEngine;
+using Unity.Jobs;
+using Unity.Collections;
+using NeuralJobs;
+
 public class JobTest : MonoBehaviour {
-    private void Awake() {
-        var a = new NativeArray<float>(16, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        var b = new NativeArray<float>(16, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        var r = new NativeArray<float>(16, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+    private void Awaken() {
+        //Mnist.Load();
 
-        for (int i = 0; i < 16; i++) {
-            a[i] = i;
-            b[i] = 16 - i;
-        }
+        /* Allocation */
 
-        var j = new AddJob();
-        j.A = a;
-        j.B = b;
-        j.R = r;
-        var h = j.Schedule();
-        h.Complete();
-        for (int i = 0; i < 16; i++) {
-            Debug.Log(r[i]);
-        }
+        const int numInputs = 16;
+        const int numHidden = 4;
 
-        a.Dispose();
-        b.Dispose();
-        r.Dispose();
+        var input = new NativeArray<float>(numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        var weights = new NativeArray<float>(numHidden * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        var bias = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        var output = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+
+        /* Init */
+
+        var initInputJob = new GaussianJob();
+        initInputJob.Random = new MTRandom(0);
+        initInputJob.T = bias;
+        initInputJob.Mean = 0.5f;
+        initInputJob.Std = 0.5f;
+        
+        var initBiasJob = new GaussianJob();
+        initBiasJob.Random = new MTRandom(1);
+        initBiasJob.T = bias;
+        initBiasJob.Mean = 0f;
+        initBiasJob.Std = 1f;
+        
+        var initWeightsJob = new GaussianJob();
+        initWeightsJob.Random = new MTRandom(2);
+        initWeightsJob.T = weights;
+        initWeightsJob.Mean = 0f;
+        initWeightsJob.Std = 1f;
+        
+        initInputJob.Schedule().Complete();
+        initBiasJob.Schedule().Complete();
+        initWeightsJob.Schedule().Complete();
+
+        /* Forward Pass */
+
+        var addBiasJob = new CopyToJob();
+        addBiasJob.A = bias;
+        addBiasJob.T = output;
+        var addBiasHandle = addBiasJob.Schedule();
+
+        var dotJob = new DotJob();
+        dotJob.Input = input;
+        dotJob.Weights = weights;
+        dotJob.Output = output;
+        
+        var dotHandle = dotJob.Schedule(addBiasHandle);
+
+        var sigmoidJob = new SigmoidJob();
+        sigmoidJob.A = output;
+        var sigmoidHandle = sigmoidJob.Schedule(dotHandle);
+
+        input.Dispose();
+        weights.Dispose();
+        bias.Dispose();
+        output.Dispose();
     }
 }
