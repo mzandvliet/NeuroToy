@@ -4,17 +4,15 @@ using UnityEngine;
 
 /* 
 Todo:
-- Fix fundamental problems, get the computation correct
-    - Same amount of iterations, same numerical computations as baselines should result in ~same accuracy
 - Better training progress logging (graph of average cost per batch)
 - Code refactoring:
     - Separation of data structures needed for forward and backward evaluation; for training and use
     - vector/matrix notation
     - ...and a library that computes those efficiently
 
-- One perceived problem right now is that randomly initialized networks don't seem
-to correspond to uniform distribution over the output classes. I suspect this
-has to do with suboptimal initialization strategy. Try Xavier or other.
+- Randomly initialized networks don't seem to correspond to uniform distribution over
+the output classes. I suspect this has to do with suboptimal initialization strategy.
+Try Xavier or other.
  */
 
 public class MnistTraining : MonoBehaviour {
@@ -38,9 +36,6 @@ public class MnistTraining : MonoBehaviour {
 
         Mnist.Load();
 
-        _tex = new Texture2D(Mnist.Train.Rows, Mnist.Train.Cols, TextureFormat.ARGB32, false, true); // Lol
-        _tex.filterMode = FilterMode.Point;
-
         var def = new NetDefinition(
             Mnist.Train.ImgDims,
             new LayerDefinition(30, LayerType.Deterministic, ActivationType.Sigmoid),
@@ -54,6 +49,8 @@ public class MnistTraining : MonoBehaviour {
 
         Test();
 
+        // _tex = new Texture2D(Mnist.Train.Rows, Mnist.Train.Cols, TextureFormat.ARGB32, false, true); // Lol
+        // _tex.filterMode = FilterMode.Point;
         // const int testImg = 7291;
         // _label = Mnist.Test.Labels[testImg];
         // Mnist.ToTexture(Mnist.Test, testImg, _tex);
@@ -99,15 +96,15 @@ public class MnistTraining : MonoBehaviour {
         int correctTrainLabels = 0;
 
         ZeroGradients(_gradientBucket);
-        var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
-        for (int i = 0; i < trainBatch.Indices.Length; i++) {
-            int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
+        var batch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
+        for (int i = 0; i < batch.Indices.Length; i++) {
+            int lbl = Mnist.Train.Labels[batch.Indices[i]];
 
             // Copy image to input layer (Todo: this is a waste of time/memory)
             UnityEngine.Profiling.Profiler.BeginSample("CopyInputs");
             
             for (int p = 0; p < Mnist.Train.ImgDims; p++) {
-                _net.Input[p] = Mnist.Train.Images[trainBatch.Indices[i], p];
+                _net.Input[p] = Mnist.Train.Images[batch.Indices[i], p];
             }
                 
             UnityEngine.Profiling.Profiler.EndSample();
@@ -115,21 +112,18 @@ public class MnistTraining : MonoBehaviour {
             NetUtils.Forward(_net);
 
             int predictedLbl = NetUtils.GetMaxOutput(_net);
-            Mnist.LabelToOneHot(lbl, target);
 
             if (predictedLbl == lbl) {
                 correctTrainLabels++;
             }
-            //Debug.Log(outputClass + ", " + batch.Labels[i]);
 
             // Calculate error between output layer and target
+            Mnist.LabelToOneHot(lbl, target);
             Mnist.Subtract(target, _net.Output, dCdO);
-            float cost = Mnist.Cost(dCdO);
-            avgTrainCost += cost;
+            avgTrainCost += Mnist.Cost(dCdO);
 
             // Propagate error back
             // Calculate per-parameter gradient, store it
-
             NetUtils.Backward(_net, target);
             AddGradients(_net, _gradientBucket);
         }
@@ -143,14 +137,14 @@ public class MnistTraining : MonoBehaviour {
         _batch++;
         _trainingLoss = (float)Math.Round(avgTrainCost, 6);
 
+        UnityEngine.Profiling.Profiler.EndSample();
+
         // Debug.Log(
         //     "Batch: " + _batchesTrained +
         //     ", TrainLoss: " + Math.Round(avgTrainCost, 6) +
         //     ", Rate: " + Math.Round(rate, 6));
         // Mnist.ToTexture(batch, batch.Labels.Length-1, _tex);
         // _label = batch.Labels[batch.Labels.Length-1];
-
-        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private void Test() {
@@ -219,34 +213,4 @@ public class MnistTraining : MonoBehaviour {
             
         UnityEngine.Profiling.Profiler.EndSample();
     }
-
-    // private static void DivideGradients(Network bucket, float factor) {
-    //     UnityEngine.Profiling.Profiler.BeginSample("DivideGradients");
-            
-    //     for (int l = 1; l < bucket.Layers.Count; l++) {
-    //         for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
-    //             bucket.Layers[l].DCDZ[n] /= factor;
-    //             for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
-    //                 bucket.Layers[l].DCDW[n, w] /= factor;
-    //             }
-    //         }
-    //     }
-            
-    //     UnityEngine.Profiling.Profiler.EndSample();
-    // }
-
-    // private static void ClipGradients(Network bucket) {
-    //     UnityEngine.Profiling.Profiler.BeginSample("ClipGradients");
-            
-    //     for (int l = 1; l < bucket.Layers.Count; l++) {
-    //         for (int n = 0; n < bucket.Layers[l].NeuronCount; n++) {
-    //             bucket.Layers[l].DCDZ[n] = Mathf.Clamp(bucket.Layers[l].DCDZ[n], -1.0f, 1.0f);
-    //             for (int w = 0; w < bucket.Layers[l - 1].NeuronCount; w++) {
-    //                 bucket.Layers[l].DCDW[n, w] = Mathf.Clamp(bucket.Layers[l].DCDW[n, w], -1.0f, 1.0f); ;
-    //             }
-    //         }
-    //     }
-            
-    //     UnityEngine.Profiling.Profiler.EndSample();
-    // }
 }
