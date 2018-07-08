@@ -34,7 +34,7 @@ public struct Dataset {
 }
 
 public class Mnist {
-    private const string Folder = "Datasets\\Mnist";
+    private const string Folder = "./Datasets/Mnist";
     private const string TrainImagePath = "train-images.idx3-ubyte";
     private const string TrainLabelPath = "train-labels.idx1-ubyte";
     private const string TestImagePath = "t10k-images.idx3-ubyte";
