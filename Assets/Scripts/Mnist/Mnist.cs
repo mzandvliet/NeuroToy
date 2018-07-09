@@ -131,29 +131,7 @@ namespace Old {
             tex.Apply(false);
         }
 
-        public static void LabelToOneHot(int label, float[] vector) {
-            for (int i = 0; i < vector.Length; i++) {
-                vector[i] = i == label ? 1f : 0f;
-            }
-        }
-
-        public static void Subtract(float[] a, float[] b, float[] result) {
-            if (a.Length != b.Length) {
-                throw new System.ArgumentException("Lengths of arrays have to match");
-            }
-
-            for (int i = 0; i < a.Length; i++) {
-                result[i] = a[i] - b[i];
-            }
-        }
-
-        public static float Cost(float[] vector) {
-            float sum = 0f;
-            for (int i = 0; i < vector.Length; i++) {
-                sum += vector[i] * vector[i];
-            }
-            return Mathf.Sqrt(sum);
-        }
+       
     }
 
     public class Batch {

@@ -116,7 +116,7 @@ public class MnistTraining : MonoBehaviour {
             NetUtils.Forward(_net);
 
             int predictedLbl = NetUtils.GetMaxOutput(_net);
-            Mnist.LabelToOneHot(lbl, target);
+            NetUtils.LabelToOneHot(lbl, target);
 
             if (predictedLbl == lbl) {
                 correctTrainLabels++;
@@ -124,8 +124,8 @@ public class MnistTraining : MonoBehaviour {
             //Debug.Log(outputClass + ", " + batch.Labels[i]);
 
             // Calculate error between output layer and target
-            Mnist.Subtract(target, _net.Output, dCdO);
-            float cost = Mnist.Cost(dCdO);
+            NetUtils.Subtract(target, _net.Output, dCdO);
+            float cost = NetUtils.Cost(dCdO);
             avgTrainCost += cost;
 
             // Propagate error back
