@@ -43,20 +43,17 @@ using Unity.Collections;
 using NeuralJobs;
 
 public struct NativeNetwork : System.IDisposable {
-    public NativeArray<float> Input;
     public NativeArray<float> Weights;
     public NativeArray<float> Bias;
     public NativeArray<float> Output;
 
     public NativeNetwork(int numInputs, int numHidden) {
-        Input = new NativeArray<float>(numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         Weights = new NativeArray<float>(numHidden * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         Bias = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         Output = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
     }
 
     public void Dispose() {
-        Input.Dispose();
         Weights.Dispose();
         Bias.Dispose();
         Output.Dispose();
@@ -76,6 +73,9 @@ public class JobTest : MonoBehaviour {
 
         var net = new NativeNetwork(numInputs, numHidden);
         Init(_random, net);
+
+        var input = new NativeArray<float>(numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        RandomGaussian(_random, input, 0f, 1f);
 
         /* Forward Pass */
 
@@ -114,19 +114,18 @@ public class JobTest : MonoBehaviour {
         // initBiasJob.Schedule().Complete();
         // initWeightsJob.Schedule().Complete();
 
-        RandomGaussian(random, net.Input, 0f, 1f);
         RandomGaussian(random, net.Weights, 0f, 1f);
         RandomGaussian(random, net.Bias, 0f, 1f);
     }
 
-    private static JobHandle ScheduleForwardPass(NativeNetwork net) {
+    private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input) {
         var addBiasJob = new CopyToJob();
         addBiasJob.A = net.Bias;
         addBiasJob.T = net.Output;
         var addBiasHandle = addBiasJob.Schedule();
 
         var dotJob = new DotJob();
-        dotJob.Input = net.Input;
+        dotJob.Input = input;
         dotJob.Weights = net.Weights;
         dotJob.Output = net.Output;
 
