@@ -79,7 +79,7 @@ public class JobTest : MonoBehaviour {
 
         /* Forward Pass */
 
-        var forwardHandle = ScheduleForwardPass(net);
+        var forwardHandle = ScheduleForwardPass(net, input);
         forwardHandle.Complete();
 
         for (int i = 0; i < net.Output.Length; i++) {
@@ -87,6 +87,7 @@ public class JobTest : MonoBehaviour {
         }
 
         net.Dispose();
+        input.Dispose();
     }
 
     private static void Init(System.Random random, NativeNetwork net) {
