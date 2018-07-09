@@ -40,23 +40,59 @@ a computation graph with some notation and have a system that builds the jobs fo
 using UnityEngine;
 using Unity.Jobs;
 using Unity.Collections;
+using System.Collections.Generic;
 using NeuralJobs;
 
-public struct NativeNetwork : System.IDisposable {
-    public NativeArray<float> Weights;
-    public NativeArray<float> Bias;
-    public NativeArray<float> Output;
+public struct NativeLayerConfig {
+    public int Neurons;
+}
 
-    public NativeNetwork(int numInputs, int numHidden) {
-        Weights = new NativeArray<float>(numHidden * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        Bias = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        Output = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+public class NativeNetworkConfig {
+    public List<NativeLayerConfig> Layers;
+
+    public NativeNetworkConfig() {
+        Layers = new List<NativeLayerConfig>();
+    }
+}
+
+// Todo: could test layers just existing of slices of single giant arrays
+public class NativeLayer : System.IDisposable {
+    public NativeArray<float> Biases;
+    public NativeArray<float> Weights;
+    public NativeArray<float> Outputs;
+
+    public NativeLayer(int numNeurons, int numInputs) {
+        Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
     }
 
     public void Dispose() {
+        Biases.Dispose();
         Weights.Dispose();
-        Bias.Dispose();
-        Output.Dispose();
+        Outputs.Dispose();
+    }
+}
+
+
+public class NativeNetwork : System.IDisposable {
+    public NativeLayer[] Layers;
+
+    public NativeLayer Last {
+        get { return Layers[Layers.Length-1]; }
+    }
+
+    public NativeNetwork(NativeNetworkConfig config) {
+        Layers = new NativeLayer[config.Layers.Count-1];
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l] = new NativeLayer(config.Layers[l+1].Neurons, config.Layers[l].Neurons);
+        }
+    }
+
+    public void Dispose() {
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l].Dispose();
+        }
     }
 }
 
@@ -68,13 +104,15 @@ public class JobTest : MonoBehaviour {
 
         _random = new System.Random(1234);
 
-        const int numInputs = 16;
-        const int numHidden = 4;
+        var config = new NativeNetworkConfig();
+        config.Layers.Add(new NativeLayerConfig { Neurons = 786 });
+        config.Layers.Add(new NativeLayerConfig { Neurons = 30 });
+        config.Layers.Add(new NativeLayerConfig { Neurons = 10 });
 
-        var net = new NativeNetwork(numInputs, numHidden);
+        var net = new NativeNetwork(config);
         Init(_random, net);
 
-        var input = new NativeArray<float>(numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        var input = new NativeArray<float>(config.Layers[0].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         RandomGaussian(_random, input, 0f, 1f);
 
         /* Forward Pass */
@@ -82,8 +120,8 @@ public class JobTest : MonoBehaviour {
         var forwardHandle = ScheduleForwardPass(net, input);
         forwardHandle.Complete();
 
-        for (int i = 0; i < net.Output.Length; i++) {
-            Debug.Log("" + i + ": " + net.Output[i]);
+        for (int i = 0; i < net.Last.Outputs.Length; i++) {
+            Debug.Log("" + i + ": " + net.Last.Outputs[i]);
         }
 
         net.Dispose();
@@ -92,51 +130,40 @@ public class JobTest : MonoBehaviour {
 
     private static void Init(System.Random random, NativeNetwork net) {
         // Todo: init as jobs too. Needs Burst-compatible RNG.
-        
-        // var initInputJob = new GaussianJob();
-        // initInputJob.Random = new MTRandom(0);
-        // initInputJob.T = bias;
-        // initInputJob.Mean = 0.5f;
-        // initInputJob.Std = 0.5f;
 
-        // var initBiasJob = new GaussianJob();
-        // initBiasJob.Random = new MTRandom(1);
-        // initBiasJob.T = bias;
-        // initBiasJob.Mean = 0f;
-        // initBiasJob.Std = 1f;
-
-        // var initWeightsJob = new GaussianJob();
-        // initWeightsJob.Random = new MTRandom(2);
-        // initWeightsJob.T = weights;
-        // initWeightsJob.Mean = 0f;
-        // initWeightsJob.Std = 1f;
-
-        // initInputJob.Schedule().Complete();
-        // initBiasJob.Schedule().Complete();
-        // initWeightsJob.Schedule().Complete();
-
-        RandomGaussian(random, net.Weights, 0f, 1f);
-        RandomGaussian(random, net.Bias, 0f, 1f);
+        for (int l = 0; l < net.Layers.Length; l++) {
+            RandomGaussian(random, net.Layers[l].Weights, 0f, 1f);
+            RandomGaussian(random, net.Layers[l].Biases, 0f, 1f);
+        }
     }
 
     private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input) {
-        var addBiasJob = new CopyToJob();
-        addBiasJob.A = net.Bias;
-        addBiasJob.T = net.Output;
-        var addBiasHandle = addBiasJob.Schedule();
+        JobHandle h = new JobHandle();
+        NativeArray<float> lastOut = input;
 
-        var dotJob = new DotJob();
-        dotJob.Input = input;
-        dotJob.Weights = net.Weights;
-        dotJob.Output = net.Output;
+        for (int l = 0; l < net.Layers.Length; l++) {
+            var layer = net.Layers[l];
 
-        var dotHandle = dotJob.Schedule(addBiasHandle);
+            var addBiasJob = new CopyToJob();
+            addBiasJob.A = layer.Biases;
+            addBiasJob.T = layer.Outputs;
+            h = addBiasJob.Schedule(h);
 
-        var sigmoidJob = new SigmoidJob();
-        sigmoidJob.A = net.Output;
-        var sigmoidHandle = sigmoidJob.Schedule(dotHandle);
+            var dotJob = new DotJob();
+            dotJob.Input = lastOut;
+            dotJob.Weights = layer.Weights;
+            dotJob.Output = layer.Outputs;
 
-        return sigmoidHandle;
+            h = dotJob.Schedule(h);
+
+            var sigmoidJob = new SigmoidJob();
+            sigmoidJob.A = layer.Outputs;
+            h = sigmoidJob.Schedule(h);
+
+            lastOut = layer.Outputs;
+        }
+
+        return h;
     }
 
     private static void RandomGaussian(System.Random random, NativeArray<float> values, float mean, float std) {
