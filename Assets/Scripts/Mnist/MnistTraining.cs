@@ -1,6 +1,7 @@
 ﻿using System;
 using Unity.Collections;
 using UnityEngine;
+using Mnist = Old.Mnist;
 
 /* 
 Todo:

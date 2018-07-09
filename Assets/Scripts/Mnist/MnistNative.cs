@@ -1,12 +1,12 @@
-﻿using System.IO;
-using System.Text;
+using System.IO;
 using UnityEngine;
+using Unity.Collections;
 using System.Collections.Generic;
 
-namespace Old {
-    public struct Dataset {
-        public int[] Labels;
-        public float[,] Images;
+namespace New {
+    public struct Dataset : System.IDisposable {
+        public NativeArray<int> Labels;
+        public NativeArray<float> Images;
         public List<int> Indices;
 
         public int NumImgs {
@@ -26,11 +26,16 @@ namespace Old {
         }
 
         public Dataset(int count, int rows, int cols) {
-            Labels = new int[count];
-            Images = new float[count, rows * cols];
+            Labels = new NativeArray<int>(count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Images = new NativeArray<float>(count * rows * cols, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Indices = new List<int>(count);
             Rows = rows;
             Cols = cols;
-            Indices = new List<int>(count);
+        }
+
+        public void Dispose() {
+            Labels.Dispose();
+            Images.Dispose();
         }
     }
 
@@ -49,6 +54,12 @@ namespace Old {
             Test = Load(TestImagePath, TestLabelPath);
         }
 
+        public static void Unload() {
+            Debug.Log("MNIST: Unloading datasets...");
+            Train.Dispose();
+            Test.Dispose();
+        }
+
         private static Dataset Load(string imgPath, string lblPath) {
             var lblReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, lblPath), FileMode.Open));
             var imgReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, imgPath), FileMode.Open));
@@ -62,7 +73,7 @@ namespace Old {
             int Cols = imgReader.ReadInt32();
             int ImgDims = Rows * Cols;
 
-            Debug.Log("Loading " + imgPath + ", Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
+            Debug.Log("MNIST: Loading " + imgPath + ", Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
 
             var set = new Dataset(NumImgs, Rows, Cols);
 
@@ -74,7 +85,7 @@ namespace Old {
             for (int i = 0; i < NumImgs; i++) {
                 for (int j = 0; j < ImgDims; j++) {
                     byte pix = imgReader.ReadByte();
-                    set.Images[i, j] = pix / 256f;
+                    set.Images[i * ImgDims + j] = pix / 256f;
                 }
             }
 
@@ -121,7 +132,7 @@ namespace Old {
 
             for (int y = 0; y < set.Cols; y++) {
                 for (int x = 0; x < set.Rows; x++) {
-                    float pix = set.Images[imgIndex, y * set.Cols + x];
+                    float pix = set.Images[imgIndex * set.ImgDims + y * set.Cols + x];
                     // Invert y
                     colors[(set.Cols - 1 - y) * set.Cols + x] = new Color(pix, pix, pix, 1f);
                 }

@@ -42,105 +42,13 @@ using Unity.Jobs;
 using Unity.Collections;
 using System.Collections.Generic;
 using NeuralJobs;
-
-public struct NativeLayerConfig {
-    public int Neurons;
-}
-
-public class NativeNetworkConfig {
-    public List<NativeLayerConfig> Layers;
-
-    public NativeNetworkConfig() {
-        Layers = new List<NativeLayerConfig>();
-    }
-}
-
-// Todo: could test layers just existing of slices of single giant arrays
-public class NativeNetworkLayer : System.IDisposable {
-    public NativeArray<float> Biases;
-    public NativeArray<float> Weights;
-    public NativeArray<float> Outputs;
-
-    public NativeNetworkLayer(int numNeurons, int numInputs) {
-        Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-    }
-
-    public void Dispose() {
-        Biases.Dispose();
-        Weights.Dispose();
-        Outputs.Dispose();
-    }
-}
-
-
-public class NativeNetwork : System.IDisposable {
-    public NativeNetworkLayer[] Layers;
-
-    public NativeNetworkLayer Last {
-        get { return Layers[Layers.Length-1]; }
-    }
-
-    public NativeNetwork(NativeNetworkConfig config) {
-        Layers = new NativeNetworkLayer[config.Layers.Count-1];
-        for (int l = 0; l < Layers.Length; l++) {
-            Layers[l] = new NativeNetworkLayer(config.Layers[l+1].Neurons, config.Layers[l].Neurons);
-        }
-    }
-
-    public void Dispose() {
-        for (int l = 0; l < Layers.Length; l++) {
-            Layers[l].Dispose();
-        }
-    }
-}
-
-public class NativeOptimizerLayer : System.IDisposable {
-    public NativeArray<float> DCDZ;
-    public NativeArray<float> DCDW;
-
-    public NativeOptimizerLayer(int numNeurons, int numInputs) {
-        DCDZ = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
-        DCDW = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
-    }
-
-    public void Dispose() {
-        DCDZ.Dispose();
-        DCDW.Dispose();
-    }
-}
-
-public class NativeOptimizer : System.IDisposable {
-    public NativeOptimizerLayer[] Layers;
-    public NativeArray<float> DCDO;
-
-    public NativeOptimizerLayer Last {
-        get { return Layers[Layers.Length - 1]; }
-    }
-
-    public NativeOptimizer(NativeNetworkConfig config) {
-        Layers = new NativeOptimizerLayer[config.Layers.Count - 1];
-        for (int l = 0; l < Layers.Length; l++) {
-            Layers[l] = new NativeOptimizerLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
-        }
-
-        DCDO = new NativeArray<float>(config.Layers[config.Layers.Count-1].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-    }
-
-    public void Dispose() {
-        for (int l = 0; l < Layers.Length; l++) {
-            Layers[l].Dispose();
-        }
-        DCDO.Dispose();
-    }
-}
+using Mnist = New.Mnist;
 
 public class JobTest : MonoBehaviour {
     System.Random _random;
 
     private void Awake() {
-        //Mnist.Load();
+        Mnist.Load();
 
         _random = new System.Random(1234);
 
@@ -173,6 +81,10 @@ public class JobTest : MonoBehaviour {
         optimizer.Dispose();
         input.Dispose();
         targetOutput.Dispose();
+    }
+
+    private void OnDestroy() {
+        Mnist.Unload();
     }
 
     private static void Initialize(System.Random random, NativeNetwork net) {
@@ -248,5 +160,98 @@ public class JobTest : MonoBehaviour {
         }
 
         return h;
+    }
+}
+
+public struct NativeLayerConfig {
+    public int Neurons;
+}
+
+public class NativeNetworkConfig {
+    public List<NativeLayerConfig> Layers;
+
+    public NativeNetworkConfig() {
+        Layers = new List<NativeLayerConfig>();
+    }
+}
+
+// Todo: could test layers just existing of slices of single giant arrays
+public class NativeNetworkLayer : System.IDisposable {
+    public NativeArray<float> Biases;
+    public NativeArray<float> Weights;
+    public NativeArray<float> Outputs;
+
+    public NativeNetworkLayer(int numNeurons, int numInputs) {
+        Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+    }
+
+    public void Dispose() {
+        Biases.Dispose();
+        Weights.Dispose();
+        Outputs.Dispose();
+    }
+}
+
+
+public class NativeNetwork : System.IDisposable {
+    public NativeNetworkLayer[] Layers;
+
+    public NativeNetworkLayer Last {
+        get { return Layers[Layers.Length - 1]; }
+    }
+
+    public NativeNetwork(NativeNetworkConfig config) {
+        Layers = new NativeNetworkLayer[config.Layers.Count - 1];
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l] = new NativeNetworkLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
+        }
+    }
+
+    public void Dispose() {
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l].Dispose();
+        }
+    }
+}
+
+public class NativeOptimizerLayer : System.IDisposable {
+    public NativeArray<float> DCDZ;
+    public NativeArray<float> DCDW;
+
+    public NativeOptimizerLayer(int numNeurons, int numInputs) {
+        DCDZ = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        DCDW = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+    }
+
+    public void Dispose() {
+        DCDZ.Dispose();
+        DCDW.Dispose();
+    }
+}
+
+public class NativeOptimizer : System.IDisposable {
+    public NativeOptimizerLayer[] Layers;
+    public NativeArray<float> DCDO;
+
+    public NativeOptimizerLayer Last {
+        get { return Layers[Layers.Length - 1]; }
+    }
+
+    public NativeOptimizer(NativeNetworkConfig config) {
+        Layers = new NativeOptimizerLayer[config.Layers.Count - 1];
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l] = new NativeOptimizerLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
+        }
+
+        DCDO = new NativeArray<float>(config.Layers[config.Layers.Count - 1].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+    }
+
+    public void Dispose() {
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l].Dispose();
+        }
+        DCDO.Dispose();
     }
 }
