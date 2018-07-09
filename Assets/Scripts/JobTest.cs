@@ -42,65 +42,106 @@ using Unity.Jobs;
 using Unity.Collections;
 using NeuralJobs;
 
+public struct NativeNetwork : System.IDisposable {
+    public NativeArray<float> Input;
+    public NativeArray<float> Weights;
+    public NativeArray<float> Bias;
+    public NativeArray<float> Output;
+
+    public NativeNetwork(int numInputs, int numHidden) {
+        Input = new NativeArray<float>(numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Weights = new NativeArray<float>(numHidden * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Bias = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Output = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+    }
+
+    public void Dispose() {
+        Input.Dispose();
+        Weights.Dispose();
+        Bias.Dispose();
+        Output.Dispose();
+    }
+}
+
 public class JobTest : MonoBehaviour {
-    private void Awaken() {
+    System.Random _random;
+
+    private void Awake() {
         //Mnist.Load();
 
-        /* Allocation */
+        _random = new System.Random(1234);
 
         const int numInputs = 16;
         const int numHidden = 4;
 
-        var input = new NativeArray<float>(numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        var weights = new NativeArray<float>(numHidden * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        var bias = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        var output = new NativeArray<float>(numHidden, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-
-        /* Init */
-
-        var initInputJob = new GaussianJob();
-        initInputJob.Random = new MTRandom(0);
-        initInputJob.T = bias;
-        initInputJob.Mean = 0.5f;
-        initInputJob.Std = 0.5f;
-        
-        var initBiasJob = new GaussianJob();
-        initBiasJob.Random = new MTRandom(1);
-        initBiasJob.T = bias;
-        initBiasJob.Mean = 0f;
-        initBiasJob.Std = 1f;
-        
-        var initWeightsJob = new GaussianJob();
-        initWeightsJob.Random = new MTRandom(2);
-        initWeightsJob.T = weights;
-        initWeightsJob.Mean = 0f;
-        initWeightsJob.Std = 1f;
-        
-        initInputJob.Schedule().Complete();
-        initBiasJob.Schedule().Complete();
-        initWeightsJob.Schedule().Complete();
+        var net = new NativeNetwork(numInputs, numHidden);
+        Init(_random, net);
 
         /* Forward Pass */
 
+        var forwardHandle = ScheduleForwardPass(net);
+        forwardHandle.Complete();
+
+        for (int i = 0; i < net.Output.Length; i++) {
+            Debug.Log("" + i + ": " + net.Output[i]);
+        }
+
+        net.Dispose();
+    }
+
+    private static void Init(System.Random random, NativeNetwork net) {
+        // Todo: init as jobs too. Needs Burst-compatible RNG.
+        
+        // var initInputJob = new GaussianJob();
+        // initInputJob.Random = new MTRandom(0);
+        // initInputJob.T = bias;
+        // initInputJob.Mean = 0.5f;
+        // initInputJob.Std = 0.5f;
+
+        // var initBiasJob = new GaussianJob();
+        // initBiasJob.Random = new MTRandom(1);
+        // initBiasJob.T = bias;
+        // initBiasJob.Mean = 0f;
+        // initBiasJob.Std = 1f;
+
+        // var initWeightsJob = new GaussianJob();
+        // initWeightsJob.Random = new MTRandom(2);
+        // initWeightsJob.T = weights;
+        // initWeightsJob.Mean = 0f;
+        // initWeightsJob.Std = 1f;
+
+        // initInputJob.Schedule().Complete();
+        // initBiasJob.Schedule().Complete();
+        // initWeightsJob.Schedule().Complete();
+
+        RandomGaussian(random, net.Input, 0f, 1f);
+        RandomGaussian(random, net.Weights, 0f, 1f);
+        RandomGaussian(random, net.Bias, 0f, 1f);
+    }
+
+    private static JobHandle ScheduleForwardPass(NativeNetwork net) {
         var addBiasJob = new CopyToJob();
-        addBiasJob.A = bias;
-        addBiasJob.T = output;
+        addBiasJob.A = net.Bias;
+        addBiasJob.T = net.Output;
         var addBiasHandle = addBiasJob.Schedule();
 
         var dotJob = new DotJob();
-        dotJob.Input = input;
-        dotJob.Weights = weights;
-        dotJob.Output = output;
-        
+        dotJob.Input = net.Input;
+        dotJob.Weights = net.Weights;
+        dotJob.Output = net.Output;
+
         var dotHandle = dotJob.Schedule(addBiasHandle);
 
         var sigmoidJob = new SigmoidJob();
-        sigmoidJob.A = output;
+        sigmoidJob.A = net.Output;
         var sigmoidHandle = sigmoidJob.Schedule(dotHandle);
 
-        input.Dispose();
-        weights.Dispose();
-        bias.Dispose();
-        output.Dispose();
+        return sigmoidHandle;
+    }
+
+    private static void RandomGaussian(System.Random random, NativeArray<float> values, float mean, float std) {
+        for (int i = 0; i < values.Length; i++) {
+            values[i] = Old.Utils.Gaussian(random, mean, std);
+        }
     }
 }

@@ -45,18 +45,18 @@ namespace NeuralJobs {
         }
     }
 
-    public struct GaussianJob : IJob {
-        [ReadOnly] public MTRandom Random;
-        [ReadOnly] public float Mean;
-        [ReadOnly] public float Std;
-        [WriteOnly] public NativeArray<float> T;
+    // public struct GaussianJob : IJob {
+    //     [ReadOnly] public MTRandom Random;
+    //     [ReadOnly] public float Mean;
+    //     [ReadOnly] public float Std;
+    //     [WriteOnly] public NativeArray<float> T;
 
-        public void Execute() {
-            for (int i = 0; i < T.Length; i++) {
-                T[i] = JobMath.Gaussian(Random, Mean, Std);
-            }
-        }
-    }
+    //     public void Execute() {
+    //         for (int i = 0; i < T.Length; i++) {
+    //             T[i] = JobMath.Gaussian(Random, Mean, Std);
+    //         }
+    //     }
+    // }
 
     public struct SigmoidJob : IJob {
         public NativeArray<float> A;
