@@ -161,7 +161,7 @@ public class JobTest : MonoBehaviour {
         targetOutput[2] = 1f;
 
         var handle = ScheduleForwardPass(net, input);
-        handle = ScheduleBackwardsPass(net, optimizer, targetOutput, handle);
+        handle = ScheduleBackwardsPass(net, optimizer, input, targetOutput, handle);
 
         handle.Complete();
 
@@ -219,7 +219,7 @@ public class JobTest : MonoBehaviour {
         return h;
     }
 
-    private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeOptimizer optimizer, NativeArray<float> target, JobHandle handle) {
+    private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeOptimizer optimizer, NativeArray<float> input, NativeArray<float> target, JobHandle handle) {
         JobHandle h = handle;
 
         var subtractJob = new SubtractJob();
@@ -227,6 +227,25 @@ public class JobTest : MonoBehaviour {
         subtractJob.B = target;
         subtractJob.T = optimizer.DCDO;
         h = subtractJob.Schedule(h);
+
+        var backwardsFinalJob = new BackwardsFinalJob();
+        backwardsFinalJob.DCDO = optimizer.DCDO;
+        backwardsFinalJob.DCDZ = optimizer.Last.DCDZ;
+        backwardsFinalJob.DCDW = optimizer.Last.DCDW;
+        backwardsFinalJob.Output = net.Last.Outputs;
+        backwardsFinalJob.OutputsPrev = net.Layers[net.Layers.Length-2].Outputs;
+        h = backwardsFinalJob.Schedule(h);
+
+        for (int l = net.Layers.Length - 2; l > 0; l--) {
+            var backwardsJob = new BackwardsJob();
+            backwardsJob.DCDZNext = optimizer.Layers[l+1].DCDZ;
+            backwardsJob.WeightsNext = net.Layers[l+1].Weights;
+            backwardsJob.DCDZ = optimizer.Layers[l].DCDZ;
+            backwardsJob.DCDW = optimizer.Layers[l].DCDW;
+            backwardsJob.Output = net.Layers[l].Outputs;
+            backwardsJob.OutputsPrev = l == 1 ? input : net.Layers[l - 1].Outputs;
+            h = backwardsJob.Schedule(h);
+        }
 
         return h;
     }

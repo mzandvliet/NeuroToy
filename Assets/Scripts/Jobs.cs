@@ -27,6 +27,10 @@ namespace NeuralJobs {
         public static float Sigmoid(float x) {
             return 1f / (1f + exp(-x));
         }
+
+        public static float SigmoidPrime(float sigmoidX) {
+            return sigmoidX * (1f - sigmoidX);
+        }
     }
 
     public struct CopyToJob : IJob {
@@ -99,6 +103,52 @@ namespace NeuralJobs {
                     Output[n] += Input[i] * Weights[Input.Length * n + i];
                 }
                 Output[n] /= (float)Input.Length;
+            }
+        }
+    }
+
+    // Todo: The way backwards passes are written needs lots of restructuring
+
+    public struct BackwardsFinalJob : IJob {
+        [ReadOnly] public NativeArray<float> DCDO;
+        [ReadOnly] public NativeArray<float> OutputsPrev;
+        public NativeArray<float> Output;
+        public NativeArray<float> DCDZ;
+        public NativeArray<float> DCDW;
+
+        public void Execute() {
+            for (int n = 0; n < Output.Length; n++) {
+                float dOdZ = JobMath.SigmoidPrime(Output[n]); // Reuses forward pass evaluation of act(z)
+                DCDZ[n] = DCDO[n] * dOdZ;
+
+                for (int w = 0; w < OutputsPrev.Length; w++) {
+                    DCDW[n * Output.Length + w] = DCDZ[n] * OutputsPrev[w];
+                }
+            }
+        }
+    }
+
+    public struct BackwardsJob : IJob {
+        [ReadOnly] public NativeArray<float> DCDZNext;
+        [ReadOnly] public NativeArray<float> WeightsNext;
+        [ReadOnly] public NativeArray<float> OutputsPrev;
+        public NativeArray<float> Output;
+        public NativeArray<float> DCDZ;
+        public NativeArray<float> DCDW;
+
+        public void Execute() {
+            for (int n = 0; n < Output.Length; n++) {
+                float dOdZ = JobMath.SigmoidPrime(Output[n]);
+
+                DCDZ[n] = 0f;
+                for (int nNext = 0; nNext < DCDZNext.Length; nNext++) {
+                    DCDZ[n] += DCDZNext[nNext] * WeightsNext[nNext * DCDZNext.Length + n];
+                }
+                DCDZ[n] *= dOdZ;
+
+                for (int w = 0; w < OutputsPrev.Length; w++) {
+                    DCDW[n * Output.Length + w] = DCDZ[n] * OutputsPrev[w];
+                }
             }
         }
     }
