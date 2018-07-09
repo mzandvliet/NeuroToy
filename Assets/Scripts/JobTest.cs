@@ -56,12 +56,12 @@ public class NativeNetworkConfig {
 }
 
 // Todo: could test layers just existing of slices of single giant arrays
-public class NativeLayer : System.IDisposable {
+public class NativeNetworkLayer : System.IDisposable {
     public NativeArray<float> Biases;
     public NativeArray<float> Weights;
     public NativeArray<float> Outputs;
 
-    public NativeLayer(int numNeurons, int numInputs) {
+    public NativeNetworkLayer(int numNeurons, int numInputs) {
         Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
@@ -76,16 +76,16 @@ public class NativeLayer : System.IDisposable {
 
 
 public class NativeNetwork : System.IDisposable {
-    public NativeLayer[] Layers;
+    public NativeNetworkLayer[] Layers;
 
-    public NativeLayer Last {
+    public NativeNetworkLayer Last {
         get { return Layers[Layers.Length-1]; }
     }
 
     public NativeNetwork(NativeNetworkConfig config) {
-        Layers = new NativeLayer[config.Layers.Count-1];
+        Layers = new NativeNetworkLayer[config.Layers.Count-1];
         for (int l = 0; l < Layers.Length; l++) {
-            Layers[l] = new NativeLayer(config.Layers[l+1].Neurons, config.Layers[l].Neurons);
+            Layers[l] = new NativeNetworkLayer(config.Layers[l+1].Neurons, config.Layers[l].Neurons);
         }
     }
 
@@ -93,6 +93,46 @@ public class NativeNetwork : System.IDisposable {
         for (int l = 0; l < Layers.Length; l++) {
             Layers[l].Dispose();
         }
+    }
+}
+
+public class NativeOptimizerLayer : System.IDisposable {
+    public NativeArray<float> DCDZ;
+    public NativeArray<float> DCDW;
+
+    public NativeOptimizerLayer(int numNeurons, int numInputs) {
+        DCDZ = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        DCDW = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+    }
+
+    public void Dispose() {
+        DCDZ.Dispose();
+        DCDW.Dispose();
+    }
+}
+
+public class NativeOptimizer : System.IDisposable {
+    public NativeOptimizerLayer[] Layers;
+    public NativeArray<float> DCDO;
+
+    public NativeOptimizerLayer Last {
+        get { return Layers[Layers.Length - 1]; }
+    }
+
+    public NativeOptimizer(NativeNetworkConfig config) {
+        Layers = new NativeOptimizerLayer[config.Layers.Count - 1];
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l] = new NativeOptimizerLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
+        }
+
+        DCDO = new NativeArray<float>(config.Layers[config.Layers.Count-1].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+    }
+
+    public void Dispose() {
+        for (int l = 0; l < Layers.Length; l++) {
+            Layers[l].Dispose();
+        }
+        DCDO.Dispose();
     }
 }
 
@@ -110,25 +150,32 @@ public class JobTest : MonoBehaviour {
         config.Layers.Add(new NativeLayerConfig { Neurons = 10 });
 
         var net = new NativeNetwork(config);
-        Init(_random, net);
+        Initialize(_random, net);
+
+        var optimizer = new NativeOptimizer(config);
 
         var input = new NativeArray<float>(config.Layers[0].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         RandomGaussian(_random, input, 0f, 1f);
 
-        /* Forward Pass */
+        var targetOutput = new NativeArray<float>(config.Layers[config.Layers.Count-1].Neurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        targetOutput[2] = 1f;
 
-        var forwardHandle = ScheduleForwardPass(net, input);
-        forwardHandle.Complete();
+        var handle = ScheduleForwardPass(net, input);
+        handle = ScheduleBackwardsPass(net, optimizer, targetOutput, handle);
+
+        handle.Complete();
 
         for (int i = 0; i < net.Last.Outputs.Length; i++) {
             Debug.Log("" + i + ": " + net.Last.Outputs[i]);
         }
 
         net.Dispose();
+        optimizer.Dispose();
         input.Dispose();
+        targetOutput.Dispose();
     }
 
-    private static void Init(System.Random random, NativeNetwork net) {
+    private static void Initialize(System.Random random, NativeNetwork net) {
         // Todo: init as jobs too. Needs Burst-compatible RNG.
 
         for (int l = 0; l < net.Layers.Length; l++) {
@@ -137,8 +184,14 @@ public class JobTest : MonoBehaviour {
         }
     }
 
+    private static void RandomGaussian(System.Random random, NativeArray<float> values, float mean, float std) {
+        for (int i = 0; i < values.Length; i++) {
+            values[i] = Old.Utils.Gaussian(random, mean, std);
+        }
+    }
+
     private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input) {
-        JobHandle h = new JobHandle();
+        JobHandle h = new JobHandle(); // Todo: is passing a null-job to job.Schedule really ok? Seems to work.
         NativeArray<float> lastOut = input;
 
         for (int l = 0; l < net.Layers.Length; l++) {
@@ -166,9 +219,15 @@ public class JobTest : MonoBehaviour {
         return h;
     }
 
-    private static void RandomGaussian(System.Random random, NativeArray<float> values, float mean, float std) {
-        for (int i = 0; i < values.Length; i++) {
-            values[i] = Old.Utils.Gaussian(random, mean, std);
-        }
+    private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeOptimizer optimizer, NativeArray<float> target, JobHandle handle) {
+        JobHandle h = handle;
+
+        var subtractJob = new SubtractJob();
+        subtractJob.A = net.Last.Outputs;
+        subtractJob.B = target;
+        subtractJob.T = optimizer.DCDO;
+        h = subtractJob.Schedule(h);
+
+        return h;
     }
 }

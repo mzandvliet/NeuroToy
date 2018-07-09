@@ -68,6 +68,23 @@ namespace NeuralJobs {
         }
     }
 
+    public struct SubtractJob : IJob {
+        [ReadOnly] public NativeArray<float> A;
+        [ReadOnly] public NativeArray<float> B;
+        public NativeArray<float> T;
+
+        public void Execute() {
+            if (A.Length != B.Length || A.Length != T.Length) {
+                Debug.LogError("Arrays need to be of same length.");
+                return;
+            }
+
+            for (int i = 0; i < A.Length; i++) {
+                T[i] = A[i] - B[i];
+            }
+        }
+    }
+
     // Calculates transpose(weights) * inputs
     public struct DotJob : IJob {
         [ReadOnly] public NativeArray<float> Input;
