@@ -11,6 +11,8 @@ So immediately we get to the interesting challenge of generating random numbers 
 many of these functions, since most calculations are independent.
 
 - Maybe we can use NativeSlice concept to flatten structures into 1d arrays
+
+- [ComputeJobOptimization]
  */
 
 namespace NeuralJobs {
@@ -112,7 +114,7 @@ namespace NeuralJobs {
     public struct BackwardsFinalJob : IJob {
         [ReadOnly] public NativeArray<float> DCDO;
         [ReadOnly] public NativeArray<float> OutputsPrev;
-        public NativeArray<float> Output;
+        [ReadOnly] public NativeArray<float> Output;
         public NativeArray<float> DCDZ;
         public NativeArray<float> DCDW;
 
@@ -132,7 +134,7 @@ namespace NeuralJobs {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> WeightsNext;
         [ReadOnly] public NativeArray<float> OutputsPrev;
-        public NativeArray<float> Output;
+        [ReadOnly] public NativeArray<float> Output;
         public NativeArray<float> DCDZ;
         public NativeArray<float> DCDW;
 

@@ -47,6 +47,9 @@ using Mnist = New.Mnist;
 public class JobTest : MonoBehaviour {
     System.Random _random;
 
+    private NativeNetwork _net;
+    private NativeOptimizer _optimizer;
+
     private void Awake() {
         Mnist.Load();
 
@@ -57,34 +60,21 @@ public class JobTest : MonoBehaviour {
         config.Layers.Add(new NativeLayerConfig { Neurons = 30 });
         config.Layers.Add(new NativeLayerConfig { Neurons = 10 });
 
-        var net = new NativeNetwork(config);
-        Initialize(_random, net);
-
-        var optimizer = new NativeOptimizer(config);
-
-        var input = new NativeArray<float>(config.Layers[0].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        RandomGaussian(_random, input, 0f, 1f);
-
-        var targetOutput = new NativeArray<float>(config.Layers[config.Layers.Count-1].Neurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
-        targetOutput[2] = 1f;
-
-        var handle = ScheduleForwardPass(net, input);
-        handle = ScheduleBackwardsPass(net, optimizer, input, targetOutput, handle);
-
-        handle.Complete();
-
-        for (int i = 0; i < net.Last.Outputs.Length; i++) {
-            Debug.Log("" + i + ": " + net.Last.Outputs[i]);
+        _net = new NativeNetwork(config);
+        Initialize(_random, _net);
+        _optimizer = new NativeOptimizer(config);
+    }
+    
+    private void Update() {
+        if (Input.GetKeyDown(KeyCode.T)) {
+            Test();
         }
-
-        net.Dispose();
-        optimizer.Dispose();
-        input.Dispose();
-        targetOutput.Dispose();
     }
 
     private void OnDestroy() {
         Mnist.Unload();
+        _net.Dispose();
+        _optimizer.Dispose();
     }
 
     private static void Initialize(System.Random random, NativeNetwork net) {
@@ -102,6 +92,50 @@ public class JobTest : MonoBehaviour {
         }
     }
 
+    private void Test() {
+        UnityEngine.Profiling.Profiler.BeginSample("Test");
+
+        NativeArray<float> input = new NativeArray<float>(Mnist.Test.ImgDims, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+
+        int correctTestLabels = 0;
+        for (int i = 0; i < Mnist.Test.NumImgs; i++) {
+            int lbl = Mnist.Test.Labels[i];
+
+            // Copy image to input layer (Todo: this is a waste of time/memory)
+            for (int p = 0; p < Mnist.Test.ImgDims; p++) {
+                input[p] = Mnist.Test.Images[i * Mnist.Test.ImgDims + p];
+            }
+
+            var handle = ScheduleForwardPass(_net, input);
+            handle.Complete();
+
+            int predictedLbl = GetMaxOutput(_net.Last.Outputs);
+
+            if (predictedLbl == lbl) {
+                correctTestLabels++;
+            }
+        }
+
+        float accuracy = correctTestLabels / (float)Mnist.Test.NumImgs;
+        Debug.Log("Test Accuracy: " + System.Math.Round(accuracy * 100f, 4) + "%");
+
+        input.Dispose();
+
+        UnityEngine.Profiling.Profiler.EndSample();
+    }
+
+    private static int GetMaxOutput(NativeArray<float> data) {
+        float largestActivation = float.MinValue;
+        int idx = 0;
+        for (int i = 0; i < data.Length; i++) {
+            if (data[i] > largestActivation) {
+                largestActivation = data[i];
+                idx = i;
+            }
+        }
+        return idx;
+    }
+
     private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input) {
         JobHandle h = new JobHandle(); // Todo: is passing a null-job to job.Schedule really ok? Seems to work.
         NativeArray<float> lastOut = input;
@@ -114,18 +148,18 @@ public class JobTest : MonoBehaviour {
             addBiasJob.T = layer.Outputs;
             h = addBiasJob.Schedule(h);
 
-            var dotJob = new DotJob();
-            dotJob.Input = lastOut;
-            dotJob.Weights = layer.Weights;
-            dotJob.Output = layer.Outputs;
+            // var dotJob = new DotJob();
+            // dotJob.Input = lastOut;
+            // dotJob.Weights = layer.Weights;
+            // dotJob.Output = layer.Outputs;
 
-            h = dotJob.Schedule(h);
+            // h = dotJob.Schedule(h);
 
-            var sigmoidJob = new SigmoidJob();
-            sigmoidJob.A = layer.Outputs;
-            h = sigmoidJob.Schedule(h);
+            // var sigmoidJob = new SigmoidJob();
+            // sigmoidJob.A = layer.Outputs;
+            // h = sigmoidJob.Schedule(h);
 
-            lastOut = layer.Outputs;
+            // lastOut = layer.Outputs;
         }
 
         return h;
@@ -193,7 +227,6 @@ public class NativeNetworkLayer : System.IDisposable {
         Outputs.Dispose();
     }
 }
-
 
 public class NativeNetwork : System.IDisposable {
     public NativeNetworkLayer[] Layers;
