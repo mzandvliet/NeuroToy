@@ -137,10 +137,12 @@ public class JobTest : MonoBehaviour {
         float avgTrainCost = 0f;
         int correctTrainLabels = 0;
 
-        ResetOptimizer(_gradientBucket); // Todo: need avgGradient thing
+        // ResetOptimizer(_gradientBucket); // Todo: need avgGradient thing
+        var handle = ScheduleZeroGradients(_gradientBucket, new JobHandle());
+        handle.Complete();
 
         var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
-        var handle = new JobHandle();
+        
         for (int i = 0; i < trainBatch.Indices.Length; i++) {
             int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
 
@@ -332,23 +334,40 @@ public class JobTest : MonoBehaviour {
     }
 
     // Todo: jobify
-    private static void ResetOptimizer(NativeOptimizer optimizer) {
-        UnityEngine.Profiling.Profiler.BeginSample("ResetOptimizer");
+    // private static void ResetOptimizer(NativeOptimizer optimizer) {
+    //     UnityEngine.Profiling.Profiler.BeginSample("ResetOptimizer");
 
-        for (int l = 0; l < optimizer.Layers.Length; l++) {
-            var dcdz = optimizer.Layers[l].DCDZ;
+    //     for (int l = 0; l < optimizer.Layers.Length; l++) {
+    //         var dcdz = optimizer.Layers[l].DCDZ;
 
-            for (int n = 0; n < dcdz.Length; n++) {
-                dcdz[n] = 0f;
+    //         for (int n = 0; n < dcdz.Length; n++) {
+    //             dcdz[n] = 0f;
                 
-                var dcdw = optimizer.Layers[l].DCDW;
-                for (int w = 0; w < dcdw.Length; w++) {
-                    optimizer.Layers[l].DCDW[w] = 0f;
-                }
-            }
+    //             var dcdw = optimizer.Layers[l].DCDW;
+    //             for (int w = 0; w < dcdw.Length; w++) {
+    //                 optimizer.Layers[l].DCDW[w] = 0f;
+    //             }
+    //         }
+    //     }
+
+    //     UnityEngine.Profiling.Profiler.EndSample();
+    // }
+
+    private static JobHandle ScheduleZeroGradients(NativeOptimizer o, JobHandle handle) {
+        // Todo: parallelize over layers and/or biases/weights
+        for (int l = 0; l < o.Layers.Length; l++) {
+            var setBiasJob = new SetValueJob();
+            setBiasJob.A = o.Layers[l].DCDZ;
+            setBiasJob.Scalar = 0f;
+            handle = setBiasJob.Schedule(handle);
+
+            var setWeightsJob = new SetValueJob();
+            setWeightsJob.A = o.Layers[l].DCDW;
+            setWeightsJob.Scalar = 0f;
+            handle = setWeightsJob.Schedule(handle);
         }
 
-        UnityEngine.Profiling.Profiler.EndSample();
+        return handle;
     }
 
     private static JobHandle ScheduleAddGradients(NativeOptimizer a, NativeOptimizer b, JobHandle handle) {

@@ -95,6 +95,23 @@ namespace NeuralJobs {
     // }
 
     [BurstCompile]
+    public struct SetValueJob : IJob {
+        public NativeArray<float> A;
+        [ReadOnly] public float Scalar;
+
+        public void Execute() {
+            // if (A.Length != B.Length || A.Length != T.Length) {
+            //     Debug.LogError("Arrays need to be of same length.");
+            //     return;
+            // }
+
+            for (int i = 0; i < A.Length; i++) {
+                A[i] = Scalar;
+            }
+        }
+    }
+
+    [BurstCompile]
     public struct SigmoidEqualsJob : IJob {
         public NativeArray<float> A;
 
