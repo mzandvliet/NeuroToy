@@ -8,12 +8,15 @@ using Unity.Burst;
 - Reference types not allowed in jobs, so we can't pass along a System.Random instance.
 So immediately we get to the interesting challenge of generating random numbers for Burst.
 
+- Basic error handling, such as when input array lengths mismatch (can be done outside of job system)
+
 - After checking out singlethreaded performance, try writing ParallalFor variants of
 many of these functions, since most calculations are independent.
 
 - Maybe we can use NativeSlice concept to flatten structures into 1d arrays
 
-- [ComputeJobOptimization]
+- Parameterize activation functions somehow, without making jobs slow through indirection
+
  */
 
 namespace NeuralJobs {
@@ -38,15 +41,15 @@ namespace NeuralJobs {
 
     [BurstCompile]
     public struct CopySubsetJob : IJob {
-        [ReadOnly] public NativeArray<float> A;
-        [WriteOnly] public NativeArray<float> B;
-        [ReadOnly] public int AStart;
-        [ReadOnly] public int ALength;
-        [ReadOnly] public int BStart;
+        [ReadOnly] public NativeArray<float> From;
+        [WriteOnly] public NativeArray<float> To;
+        [ReadOnly] public int FromStart;
+        [ReadOnly] public int FromLength;
+        [ReadOnly] public int ToStart;
 
         public void Execute() {
-            for (int i = 0; i < ALength; i++) {
-                B[BStart + i] = A[AStart + i];
+            for (int i = 0; i < FromLength; i++) {
+                To[ToStart + i] = From[FromStart + i];
             }
         }
     }
@@ -70,43 +73,20 @@ namespace NeuralJobs {
         [WriteOnly] public NativeArray<float> To;
 
         public void Execute() {
-            // if (A.Length != T.Length) {
-            //     Debug.LogError("Arrays need to be of same length.");
-            //     return;
-            // }
-
             for (int i = 0; i < From.Length; i++) {
                 To[i] = From[i];
             }
         }
     }
 
-    // public struct GaussianJob : IJob {
-    //     [ReadOnly] public MTRandom Random;
-    //     [ReadOnly] public float Mean;
-    //     [ReadOnly] public float Std;
-    //     [WriteOnly] public NativeArray<float> T;
-
-    //     public void Execute() {
-    //         for (int i = 0; i < T.Length; i++) {
-    //             T[i] = JobMath.Gaussian(Random, Mean, Std);
-    //         }
-    //     }
-    // }
-
     [BurstCompile]
     public struct SetValueJob : IJob {
-        public NativeArray<float> A;
-        [ReadOnly] public float Scalar;
+        public NativeArray<float> Data;
+        [ReadOnly] public float Value;
 
         public void Execute() {
-            // if (A.Length != B.Length || A.Length != T.Length) {
-            //     Debug.LogError("Arrays need to be of same length.");
-            //     return;
-            // }
-
-            for (int i = 0; i < A.Length; i++) {
-                A[i] = Scalar;
+            for (int i = 0; i < Data.Length; i++) {
+                Data[i] = Value;
             }
         }
     }
@@ -124,46 +104,36 @@ namespace NeuralJobs {
 
     [BurstCompile]
     public struct AddEqualsJob : IJob {
-        [ReadOnly] public NativeArray<float> A;
-        public NativeArray<float> B;
+        [ReadOnly] public NativeArray<float> Data;
+        public NativeArray<float> To;
 
         public void Execute() {
-            for (int i = 0; i < A.Length; i++) {
-                B[i] += A[i];
+            for (int i = 0; i < Data.Length; i++) {
+                To[i] += Data[i];
             }
         }
     }
 
     [BurstCompile]
     public struct SubtractEqualsJob : IJob {
-        [ReadOnly] public NativeArray<float> A;
-        public NativeArray<float> B;
+        [ReadOnly] public NativeArray<float> Data;
+        public NativeArray<float> From;
 
         public void Execute() {
-            // if (A.Length != B.Length || A.Length != T.Length) {
-            //     Debug.LogError("Arrays need to be of same length.");
-            //     return;
-            // }
-
-            for (int i = 0; i < A.Length; i++) {
-                B[i] -= A[i];
+            for (int i = 0; i < Data.Length; i++) {
+                From[i] -= Data[i];
             }
         }
     }
 
     [BurstCompile]
     public struct MultiplyEqualsJob : IJob {
-        public NativeArray<float> A;
-        [ReadOnly] public float Scalar;
+        public NativeArray<float> Data;
+        [ReadOnly] public float Value;
 
         public void Execute() {
-            // if (A.Length != B.Length || A.Length != T.Length) {
-            //     Debug.LogError("Arrays need to be of same length.");
-            //     return;
-            // }
-
-            for (int i = 0; i < A.Length; i++) {
-                A[i] *= Scalar;
+            for (int i = 0; i < Data.Length; i++) {
+                Data[i] *= Value;
             }
         }
     }
@@ -172,16 +142,11 @@ namespace NeuralJobs {
     public struct SubtractJob : IJob {
         [ReadOnly] public NativeArray<float> A;
         [ReadOnly] public NativeArray<float> B;
-        public NativeArray<float> T;
+        public NativeArray<float> Output;
 
         public void Execute() {
-            // if (A.Length != B.Length || A.Length != T.Length) {
-            //     Debug.LogError("Arrays need to be of same length.");
-            //     return;
-            // }
-
             for (int i = 0; i < A.Length; i++) {
-                T[i] = A[i] - B[i];
+                Output[i] = A[i] - B[i];
             }
         }
     }
@@ -206,47 +171,49 @@ namespace NeuralJobs {
     }
 
     // Todo: The way backwards passes are written needs lots of restructuring
+    // First, the index juggling needs to be made more readable. Like indexing
+    // the higher layer's weight matrix is a mess right now.
     [BurstCompile]
-    public struct BackwardsFinalJob : IJob {
+    public struct BackPropFinalJob : IJob {
         [ReadOnly] public NativeArray<float> DCDO;
+        [ReadOnly] public NativeArray<float> Outputs;
         [ReadOnly] public NativeArray<float> OutputsPrev;
-        [ReadOnly] public NativeArray<float> Output;
         public NativeArray<float> DCDZ;
         public NativeArray<float> DCDW;
 
         public void Execute() {
-            for (int n = 0; n < Output.Length; n++) {
-                float dOdZ = JobMath.SigmoidPrime(Output[n]); // Reuses forward pass evaluation of act(z)
+            for (int n = 0; n < Outputs.Length; n++) {
+                float dOdZ = JobMath.SigmoidPrime(Outputs[n]); // Reuses forward pass evaluation of act(z)
                 DCDZ[n] = DCDO[n] * dOdZ;
 
                 for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * Output.Length + w] = DCDZ[n] * OutputsPrev[w];
+                    DCDW[n * OutputsPrev.Length + w] = DCDZ[n] * OutputsPrev[w];
                 }
             }
         }
     }
 
     [BurstCompile]
-    public struct BackwardsJob : IJob {
+    public struct BackProbJob : IJob {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> WeightsNext;
         [ReadOnly] public NativeArray<float> OutputsPrev;
-        [ReadOnly] public NativeArray<float> Output;
+        [ReadOnly] public NativeArray<float> LOutputs;
         public NativeArray<float> DCDZ;
         public NativeArray<float> DCDW;
 
         public void Execute() {
-            for (int n = 0; n < Output.Length; n++) {
-                float dOdZ = JobMath.SigmoidPrime(Output[n]);
+            for (int n = 0; n < LOutputs.Length; n++) {
+                float dOdZ = JobMath.SigmoidPrime(LOutputs[n]);
 
                 DCDZ[n] = 0f;
                 for (int nNext = 0; nNext < DCDZNext.Length; nNext++) {
-                    DCDZ[n] += DCDZNext[nNext] * WeightsNext[nNext * DCDZNext.Length + n];
+                    DCDZ[n] += DCDZNext[nNext] * WeightsNext[nNext * DCDZ.Length + n];
                 }
                 DCDZ[n] *= dOdZ;
 
                 for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * Output.Length + w] = DCDZ[n] * OutputsPrev[w];
+                    DCDW[n * OutputsPrev.Length + w] = DCDZ[n] * OutputsPrev[w];
                 }
             }
         }

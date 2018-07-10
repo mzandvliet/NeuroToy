@@ -59,20 +59,16 @@ public class MnistTraining : MonoBehaviour {
     }
 
     private void Update() {
-        // if (_epoch < 30) {
-        //     if (_batch < 6000) {
-        //         for (int i = 0; i < 10; i++) {
-        //             TrainMinibatch();
-        //         }
-        //     } else {
-        //         Test();
-        //         _batch = 0;
-        //         _epoch++;
-        //     }
-        // }
-
-        if (Input.GetKeyDown(KeyCode.T)) {
-            Test();
+        if (_epoch < 30) {
+            if (_batch < 6000) {
+                for (int i = 0; i < 10; i++) {
+                    TrainMinibatch();
+                }
+            } else {
+                Test();
+                _batch = 0;
+                _epoch++;
+            }
         }
     }
 

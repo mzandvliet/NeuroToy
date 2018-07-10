@@ -48,8 +48,8 @@ public class JobTest : MonoBehaviour {
     System.Random _random;
 
     private NativeNetwork _net;
-    private NativeOptimizer _optimizer;
-    private NativeOptimizer _gradientBucket;
+    private NativeGradients _gradients;
+    private NativeGradients _gradientsAvg;
 
     int _epoch;
     int _batch;
@@ -69,23 +69,41 @@ public class JobTest : MonoBehaviour {
 
         _net = new NativeNetwork(config);
         Initialize(_random, _net);
-        
-        _optimizer = new NativeOptimizer(config);
-        _gradientBucket = new NativeOptimizer(config);
+
+        _gradients = new NativeGradients(config);
+        _gradientsAvg = new NativeGradients(config);
+
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
+        TrainMinibatch();
     }
     
     private void Update() {
-        if (_epoch < 30) {
-            if (_batch < 6000) {
-                for (int i = 0; i < 10; i++) {
-                    TrainMinibatch();
-                }
-            } else {
-                Test();
-                _batch = 0;
-                _epoch++;
-            }
-        }
+        // if (_epoch < 30) {
+        //     if (_batch < 6000) {
+        //         for (int i = 0; i < 50; i++) {
+        //             TrainMinibatch();
+        //         }
+        //     } else {
+        //         Test();
+        //         _batch = 0;
+        //         _epoch++;
+        //     }
+        // }
+
+        // if (Input.GetKeyDown(KeyCode.Space)) {
+        //     for (int i = 0; i < 1; i++) {
+        //             TrainMinibatch();
+        //     }
+        // }
     }
 
     private void OnGUI() {
@@ -105,8 +123,8 @@ public class JobTest : MonoBehaviour {
     private void OnDestroy() {
         Mnist.Unload();
         _net.Dispose();
-        _optimizer.Dispose();
-        _gradientBucket.Dispose();
+        _gradients.Dispose();
+        _gradientsAvg.Dispose();
     }
 
     private static void Initialize(System.Random random, NativeNetwork net) {
@@ -128,7 +146,7 @@ public class JobTest : MonoBehaviour {
         UnityEngine.Profiling.Profiler.BeginSample("TrainMiniBatch");
 
         const int numClasses = 10;
-        const int batchSize = 10;
+        const int batchSize = 1;
 
         var target = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
         var dCdO = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
@@ -137,9 +155,8 @@ public class JobTest : MonoBehaviour {
         float avgTrainCost = 0f;
         int correctTrainLabels = 0;
 
-        // ResetOptimizer(_gradientBucket); // Todo: need avgGradient thing
-        var handle = ScheduleZeroGradients(_gradientBucket, new JobHandle());
-        handle.Complete();
+        var handle = ScheduleZeroGradients(_gradientsAvg, new JobHandle());
+        handle.Complete(); // Todo: is this needed?
 
         var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
         
@@ -147,45 +164,41 @@ public class JobTest : MonoBehaviour {
             int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
 
             var copyInputJob = new CopySubsetJob();
-            copyInputJob.A = Mnist.Test.Images;
-            copyInputJob.B = input;
-            copyInputJob.ALength = Mnist.Test.ImgDims;
-            copyInputJob.AStart = i * Mnist.Test.ImgDims;
-            copyInputJob.BStart = 0;
+            copyInputJob.From = Mnist.Train.Images;
+            copyInputJob.To = input;
+            copyInputJob.FromLength = Mnist.Train.ImgDims;
+            copyInputJob.FromStart = trainBatch.Indices[i] * Mnist.Train.ImgDims;
+            copyInputJob.ToStart = 0;
             handle = copyInputJob.Schedule();
-
-            handle = ScheduleForwardPass(_net, input, handle);
-            handle.Complete();
-
-            // Todo: better if we don't Complete here, but chain backprop pass
 
             int predictedLbl = GetMaxOutput(_net.Last.Outputs);
             LabelToOneHot(lbl, target);
+
+            handle = ScheduleForwardPass(_net, input, handle);
+            handle = ScheduleBackwardsPass(_net, _gradients, input, target, handle);
+            handle.Complete();
+
+            Print(_gradients.Layers[_gradients.Layers.Length-2].DCDW);
+
+            handle = ScheduleAddGradients(_gradients, _gradientsAvg, handle);
+            handle.Complete();
 
             if (predictedLbl == lbl) {
                 correctTrainLabels++;
             }
             //Debug.Log(outputClass + ", " + batch.Labels[i]);
 
-            // Calculate error between output layer and target
+            // Todo: backwards pass logic now does this, don't redo, just check
             Subtract(target, _net.Last.Outputs, dCdO);
             float cost = Cost(dCdO);
             avgTrainCost += cost;
-
-            // Propagate error back
-            // Calculate per-parameter gradient, store it
-
-            handle = ScheduleBackwardsPass(_net, _optimizer, input, target, handle);
-            handle = ScheduleAddGradients(_optimizer, _gradientBucket, handle);
-
-            handle.Complete();
         }
 
         avgTrainCost /= (float)batchSize;
 
         // Update weights and biases according to averaged gradient and learning rate
         _rate = 3.0f / (float)batchSize;
-        handle = ScheduleUpdateParameters(_net, _gradientBucket, _rate, new JobHandle());
+        handle = ScheduleUpdateParameters(_net, _gradientsAvg, _rate, new JobHandle());
         handle.Complete();
 
         _batch++;
@@ -215,11 +228,11 @@ public class JobTest : MonoBehaviour {
             int lbl = Mnist.Test.Labels[i];
 
             var copyInputJob = new CopySubsetJob();
-            copyInputJob.A = Mnist.Test.Images;
-            copyInputJob.B = input;
-            copyInputJob.ALength = Mnist.Test.ImgDims;
-            copyInputJob.AStart = i * Mnist.Test.ImgDims;
-            copyInputJob.BStart = 0;
+            copyInputJob.From = Mnist.Test.Images;
+            copyInputJob.To = input;
+            copyInputJob.FromLength = Mnist.Test.ImgDims;
+            copyInputJob.ToStart = i * Mnist.Test.ImgDims;
+            copyInputJob.ToStart = 0;
             var handle = copyInputJob.Schedule();
 
             handle = ScheduleForwardPass(_net, input, handle);
@@ -237,6 +250,15 @@ public class JobTest : MonoBehaviour {
         input.Dispose();
 
         UnityEngine.Profiling.Profiler.EndSample();
+    }
+
+    private static void Print(NativeArray<float> a) {
+        string s = "[";
+        for (int i = 0; i < a.Length; i++) {
+            s += a[i] + ", ";
+        }
+        s += "]";
+        Debug.Log(s);
     }
 
     private static void Subtract(NativeArray<float> a, NativeArray<float> b, NativeArray<float> result) {
@@ -276,7 +298,7 @@ public class JobTest : MonoBehaviour {
     }
 
     private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input, JobHandle handle) {
-        NativeArray<float> lastOut = input;
+        NativeArray<float> output = input;
 
         for (int l = 0; l < net.Layers.Length; l++) {
             var layer = net.Layers[l];
@@ -287,7 +309,7 @@ public class JobTest : MonoBehaviour {
             handle = addBiasJob.Schedule(handle);
 
             var dotJob = new DotJob();
-            dotJob.Input = lastOut;
+            dotJob.Input = output;
             dotJob.Weights = layer.Weights;
             dotJob.Output = layer.Outputs;
             handle = dotJob.Schedule(handle);
@@ -296,36 +318,36 @@ public class JobTest : MonoBehaviour {
             sigmoidJob.A = layer.Outputs;
             handle = sigmoidJob.Schedule(handle);
 
-            lastOut = layer.Outputs;
+            output = layer.Outputs;
         }
 
         return handle;
     }
 
-    private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeOptimizer optimizer, NativeArray<float> input, NativeArray<float> target, JobHandle handle) {
+    private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle) {
         JobHandle h = handle;
 
         var subtractJob = new SubtractJob();
         subtractJob.A = net.Last.Outputs;
         subtractJob.B = target;
-        subtractJob.T = optimizer.DCDO;
+        subtractJob.Output = gradients.DCDO;
         h = subtractJob.Schedule(h);
 
-        var backwardsFinalJob = new BackwardsFinalJob();
-        backwardsFinalJob.DCDO = optimizer.DCDO;
-        backwardsFinalJob.DCDZ = optimizer.Last.DCDZ;
-        backwardsFinalJob.DCDW = optimizer.Last.DCDW;
-        backwardsFinalJob.Output = net.Last.Outputs;
+        var backwardsFinalJob = new BackPropFinalJob();
+        backwardsFinalJob.DCDO = gradients.DCDO;
+        backwardsFinalJob.DCDZ = gradients.Last.DCDZ;
+        backwardsFinalJob.DCDW = gradients.Last.DCDW;
+        backwardsFinalJob.Outputs = net.Last.Outputs;
         backwardsFinalJob.OutputsPrev = net.Layers[net.Layers.Length-2].Outputs;
         h = backwardsFinalJob.Schedule(h);
 
         for (int l = net.Layers.Length - 2; l > 0; l--) {
-            var backwardsJob = new BackwardsJob();
-            backwardsJob.DCDZNext = optimizer.Layers[l+1].DCDZ;
+            var backwardsJob = new BackProbJob();
+            backwardsJob.DCDZNext = gradients.Layers[l+1].DCDZ;
             backwardsJob.WeightsNext = net.Layers[l+1].Weights;
-            backwardsJob.DCDZ = optimizer.Layers[l].DCDZ;
-            backwardsJob.DCDW = optimizer.Layers[l].DCDW;
-            backwardsJob.Output = net.Layers[l].Outputs;
+            backwardsJob.DCDZ = gradients.Layers[l].DCDZ;
+            backwardsJob.DCDW = gradients.Layers[l].DCDW;
+            backwardsJob.LOutputs = net.Layers[l].Outputs;
             backwardsJob.OutputsPrev = l == 1 ? input : net.Layers[l - 1].Outputs;
             h = backwardsJob.Schedule(h);
         }
@@ -333,82 +355,62 @@ public class JobTest : MonoBehaviour {
         return h;
     }
 
-    // Todo: jobify
-    // private static void ResetOptimizer(NativeOptimizer optimizer) {
-    //     UnityEngine.Profiling.Profiler.BeginSample("ResetOptimizer");
-
-    //     for (int l = 0; l < optimizer.Layers.Length; l++) {
-    //         var dcdz = optimizer.Layers[l].DCDZ;
-
-    //         for (int n = 0; n < dcdz.Length; n++) {
-    //             dcdz[n] = 0f;
-                
-    //             var dcdw = optimizer.Layers[l].DCDW;
-    //             for (int w = 0; w < dcdw.Length; w++) {
-    //                 optimizer.Layers[l].DCDW[w] = 0f;
-    //             }
-    //         }
-    //     }
-
-    //     UnityEngine.Profiling.Profiler.EndSample();
-    // }
-
-    private static JobHandle ScheduleZeroGradients(NativeOptimizer o, JobHandle handle) {
+    private static JobHandle ScheduleZeroGradients(NativeGradients gradients, JobHandle handle) {
         // Todo: parallelize over layers and/or biases/weights
-        for (int l = 0; l < o.Layers.Length; l++) {
+        for (int l = 0; l < gradients.Layers.Length; l++) {
             var setBiasJob = new SetValueJob();
-            setBiasJob.A = o.Layers[l].DCDZ;
-            setBiasJob.Scalar = 0f;
+            setBiasJob.Data = gradients.Layers[l].DCDZ;
+            setBiasJob.Value = 0f;
             handle = setBiasJob.Schedule(handle);
 
             var setWeightsJob = new SetValueJob();
-            setWeightsJob.A = o.Layers[l].DCDW;
-            setWeightsJob.Scalar = 0f;
+            setWeightsJob.Data = gradients.Layers[l].DCDW;
+            setWeightsJob.Value = 0f;
             handle = setWeightsJob.Schedule(handle);
         }
 
         return handle;
     }
 
-    private static JobHandle ScheduleAddGradients(NativeOptimizer a, NativeOptimizer b, JobHandle handle) {
+    private static JobHandle ScheduleAddGradients(NativeGradients from, NativeGradients to, JobHandle handle) {
         // Todo: parallelize over layers and/or biases/weights
-        for (int l = 0; l < a.Layers.Length; l++) {
+        for (int l = 0; l < from.Layers.Length; l++) {
             var addBiasJob = new AddEqualsJob();
-            addBiasJob.A = a.Layers[l].DCDZ;
-            addBiasJob.B = b.Layers[l].DCDZ;
+            addBiasJob.Data = from.Layers[l].DCDZ;
+            addBiasJob.To = to.Layers[l].DCDZ;
             handle = addBiasJob.Schedule(handle);
 
             var addWeightsJob = new AddEqualsJob();
-            addWeightsJob.A = a.Layers[l].DCDW;
-            addWeightsJob.B = b.Layers[l].DCDW;
+            addWeightsJob.Data = from.Layers[l].DCDW;
+            addWeightsJob.To = to.Layers[l].DCDW;
             handle = addWeightsJob.Schedule(handle);
         }
 
         return handle;
     }
 
-    private static JobHandle ScheduleUpdateParameters(NativeNetwork net, NativeOptimizer gradients, float rate, JobHandle handle) {
-        // Todo: Find a nice way to fold the mult by learning rate and addition together in one job
+    private static JobHandle ScheduleUpdateParameters(NativeNetwork net, NativeGradients gradients, float rate, JobHandle handle) {
+        // Todo: Find a nice way to fold the multiply by learning rate and addition together in one job
 
         for (int l = 0; l < net.Layers.Length; l++) {
             var m = new MultiplyEqualsJob();
-            m.A = gradients.Layers[l].DCDZ;
-            m.Scalar = rate;
+            m.Data = gradients.Layers[l].DCDZ;
+            m.Value = rate;
             handle = m.Schedule(handle);
 
             var s = new SubtractEqualsJob();
-            s.A = gradients.Layers[l].DCDZ;
-            s.B = net.Layers[l].Biases;
+            s.Data = gradients.Layers[l].DCDZ;
+            s.From = net.Layers[l].Biases;
             handle = s.Schedule(handle);
 
             m = new MultiplyEqualsJob();
-            m.A = gradients.Layers[l].DCDW;
-            m.Scalar = rate;
+            m.Data = gradients.Layers[l].DCDW;
+            m.Value = rate;
             handle = m.Schedule(handle);
 
             s = new SubtractEqualsJob();
-            s.A = gradients.Layers[l].DCDW;
-            s.B = net.Layers[l].Weights;
+            s.Data = gradients.Layers[l].DCDW;
+            s.From = net.Layers[l].Weights;
             handle = s.Schedule(handle);
         }
 
@@ -437,9 +439,9 @@ public class NativeNetworkLayer : System.IDisposable {
     public readonly int NumInputs;
 
     public NativeNetworkLayer(int numNeurons, int numInputs) {
-        Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         NumNeurons = numNeurons;
         NumInputs = numInputs;
     }
@@ -472,13 +474,13 @@ public class NativeNetwork : System.IDisposable {
     }
 }
 
-public class NativeOptimizerLayer : System.IDisposable {
+public class NativeGradientsLayer : System.IDisposable {
     public NativeArray<float> DCDZ;
     public NativeArray<float> DCDW;
     public readonly int NumNeurons;
     public readonly int NumInputs;
 
-    public NativeOptimizerLayer(int numNeurons, int numInputs) {
+    public NativeGradientsLayer(int numNeurons, int numInputs) {
         DCDZ = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         DCDW = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         NumNeurons = numNeurons;
@@ -491,19 +493,19 @@ public class NativeOptimizerLayer : System.IDisposable {
     }
 }
 
-public class NativeOptimizer : System.IDisposable {
-    public NativeOptimizerLayer[] Layers;
+public class NativeGradients : System.IDisposable {
+    public NativeGradientsLayer[] Layers;
     public NativeArray<float> DCDO;
     public NativeNetworkConfig Config;
 
-    public NativeOptimizerLayer Last {
+    public NativeGradientsLayer Last {
         get { return Layers[Layers.Length - 1]; }
     }
 
-    public NativeOptimizer(NativeNetworkConfig config) {
-        Layers = new NativeOptimizerLayer[config.Layers.Count - 1];
+    public NativeGradients(NativeNetworkConfig config) {
+        Layers = new NativeGradientsLayer[config.Layers.Count - 1];
         for (int l = 0; l < Layers.Length; l++) {
-            Layers[l] = new NativeOptimizerLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
+            Layers[l] = new NativeGradientsLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
         }
 
         DCDO = new NativeArray<float>(config.Layers[config.Layers.Count - 1].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
