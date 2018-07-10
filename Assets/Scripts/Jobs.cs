@@ -37,7 +37,7 @@ namespace NeuralJobs {
     }
 
     [BurstCompile]
-    public struct CopyInputJob : IJob {
+    public struct CopySubsetJob : IJob {
         [ReadOnly] public NativeArray<float> A;
         [WriteOnly] public NativeArray<float> B;
         [ReadOnly] public int AStart;
@@ -52,7 +52,7 @@ namespace NeuralJobs {
     }
 
     [BurstCompile]
-    public struct CopyInputParallelJob : IJobParallelFor {
+    public struct CopySubsetParallelJob : IJobParallelFor {
         [ReadOnly] public NativeArray<float> A;
         [WriteOnly] public NativeArray<float> B;
         [ReadOnly] public int AStart;
@@ -65,9 +65,9 @@ namespace NeuralJobs {
     }
 
     [BurstCompile]
-    public struct CopyToJob : IJob {
-        [ReadOnly] public NativeArray<float> A;
-        [WriteOnly] public NativeArray<float> T;
+    public struct CopyJob : IJob {
+        [ReadOnly] public NativeArray<float> From;
+        [WriteOnly] public NativeArray<float> To;
 
         public void Execute() {
             // if (A.Length != T.Length) {
@@ -75,8 +75,8 @@ namespace NeuralJobs {
             //     return;
             // }
 
-            for (int i = 0; i < A.Length; i++) {
-                T[i] = A[i];
+            for (int i = 0; i < From.Length; i++) {
+                To[i] = From[i];
             }
         }
     }
@@ -95,7 +95,7 @@ namespace NeuralJobs {
     // }
 
     [BurstCompile]
-    public struct SigmoidJob : IJob {
+    public struct SigmoidEqualsJob : IJob {
         public NativeArray<float> A;
 
         public void Execute() {
@@ -106,13 +106,47 @@ namespace NeuralJobs {
     }
 
     [BurstCompile]
-    public struct AddJob : IJob {
+    public struct AddEqualsJob : IJob {
         [ReadOnly] public NativeArray<float> A;
         public NativeArray<float> B;
 
         public void Execute() {
             for (int i = 0; i < A.Length; i++) {
                 B[i] += A[i];
+            }
+        }
+    }
+
+    [BurstCompile]
+    public struct SubtractEqualsJob : IJob {
+        [ReadOnly] public NativeArray<float> A;
+        public NativeArray<float> B;
+
+        public void Execute() {
+            // if (A.Length != B.Length || A.Length != T.Length) {
+            //     Debug.LogError("Arrays need to be of same length.");
+            //     return;
+            // }
+
+            for (int i = 0; i < A.Length; i++) {
+                B[i] -= A[i];
+            }
+        }
+    }
+
+    [BurstCompile]
+    public struct MultiplyEqualsJob : IJob {
+        public NativeArray<float> A;
+        [ReadOnly] public float Scalar;
+
+        public void Execute() {
+            // if (A.Length != B.Length || A.Length != T.Length) {
+            //     Debug.LogError("Arrays need to be of same length.");
+            //     return;
+            // }
+
+            for (int i = 0; i < A.Length; i++) {
+                A[i] *= Scalar;
             }
         }
     }

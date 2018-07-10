@@ -77,7 +77,9 @@ public class JobTest : MonoBehaviour {
     private void Update() {
         if (_epoch < 30) {
             if (_batch < 6000) {
+                for (int i = 0; i < 10; i++) {
                     TrainMinibatch();
+                }
             } else {
                 Test();
                 _batch = 0;
@@ -138,16 +140,17 @@ public class JobTest : MonoBehaviour {
         ResetOptimizer(_gradientBucket); // Todo: need avgGradient thing
 
         var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
+        var handle = new JobHandle();
         for (int i = 0; i < trainBatch.Indices.Length; i++) {
             int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
 
-            var copyInputJob = new CopyInputJob();
+            var copyInputJob = new CopySubsetJob();
             copyInputJob.A = Mnist.Test.Images;
             copyInputJob.B = input;
             copyInputJob.ALength = Mnist.Test.ImgDims;
             copyInputJob.AStart = i * Mnist.Test.ImgDims;
             copyInputJob.BStart = 0;
-            var handle = copyInputJob.Schedule();
+            handle = copyInputJob.Schedule();
 
             handle = ScheduleForwardPass(_net, input, handle);
             handle.Complete();
@@ -174,15 +177,14 @@ public class JobTest : MonoBehaviour {
             handle = ScheduleAddGradients(_optimizer, _gradientBucket, handle);
 
             handle.Complete();
-            
-            //AddGradients(_optimizer, _gradientBucket);
         }
 
         avgTrainCost /= (float)batchSize;
 
         // Update weights and biases according to averaged gradient and learning rate
         _rate = 3.0f / (float)batchSize;
-        UpdateParameters(_net, _gradientBucket, _rate);
+        handle = ScheduleUpdateParameters(_net, _gradientBucket, _rate, new JobHandle());
+        handle.Complete();
 
         _batch++;
         _trainingLoss = (float)System.Math.Round(avgTrainCost, 6);
@@ -210,7 +212,7 @@ public class JobTest : MonoBehaviour {
         for (int i = 0; i < Mnist.Test.NumImgs; i++) {
             int lbl = Mnist.Test.Labels[i];
 
-            var copyInputJob = new CopyInputJob();
+            var copyInputJob = new CopySubsetJob();
             copyInputJob.A = Mnist.Test.Images;
             copyInputJob.B = input;
             copyInputJob.ALength = Mnist.Test.ImgDims;
@@ -277,9 +279,9 @@ public class JobTest : MonoBehaviour {
         for (int l = 0; l < net.Layers.Length; l++) {
             var layer = net.Layers[l];
 
-            var addBiasJob = new CopyToJob();
-            addBiasJob.A = layer.Biases;
-            addBiasJob.T = layer.Outputs;
+            var addBiasJob = new CopyJob();
+            addBiasJob.From = layer.Biases;
+            addBiasJob.To = layer.Outputs;
             handle = addBiasJob.Schedule(handle);
 
             var dotJob = new DotJob();
@@ -288,7 +290,7 @@ public class JobTest : MonoBehaviour {
             dotJob.Output = layer.Outputs;
             handle = dotJob.Schedule(handle);
 
-            var sigmoidJob = new SigmoidJob();
+            var sigmoidJob = new SigmoidEqualsJob();
             sigmoidJob.A = layer.Outputs;
             handle = sigmoidJob.Schedule(handle);
 
@@ -352,12 +354,12 @@ public class JobTest : MonoBehaviour {
     private static JobHandle ScheduleAddGradients(NativeOptimizer a, NativeOptimizer b, JobHandle handle) {
         // Todo: parallelize over layers and/or biases/weights
         for (int l = 0; l < a.Layers.Length; l++) {
-            var addBiasJob = new AddJob();
+            var addBiasJob = new AddEqualsJob();
             addBiasJob.A = a.Layers[l].DCDZ;
             addBiasJob.B = b.Layers[l].DCDZ;
             handle = addBiasJob.Schedule(handle);
 
-            var addWeightsJob = new AddJob();
+            var addWeightsJob = new AddEqualsJob();
             addWeightsJob.A = a.Layers[l].DCDW;
             addWeightsJob.B = b.Layers[l].DCDW;
             handle = addWeightsJob.Schedule(handle);
@@ -366,23 +368,33 @@ public class JobTest : MonoBehaviour {
         return handle;
     }
 
-    public static void UpdateParameters(NativeNetwork net, NativeOptimizer gradients, float learningRate) {
-        UnityEngine.Profiling.Profiler.BeginSample("UpdateParameters");
+    private static JobHandle ScheduleUpdateParameters(NativeNetwork net, NativeOptimizer gradients, float rate, JobHandle handle) {
+        // Todo: Find a nice way to fold the mult by learning rate and addition together in one job
 
         for (int l = 0; l < net.Layers.Length; l++) {
-            int nCount = net.Layers[l].Outputs.Length;
-            for (int n = 0; n < nCount; n++) {
-                net.Layers[l].Biases[n] -= gradients.Layers[l].DCDZ[n] * learningRate;
+            var m = new MultiplyEqualsJob();
+            m.A = gradients.Layers[l].DCDZ;
+            m.Scalar = rate;
+            handle = m.Schedule(handle);
 
-                for (int w = 0; w < net.Layers[l].Weights.Length; w++) {
-                    net.Layers[l].Weights[w] -= gradients.Layers[l].DCDW[w] * learningRate;
-                }
-            }
+            var s = new SubtractEqualsJob();
+            s.A = gradients.Layers[l].DCDZ;
+            s.B = net.Layers[l].Biases;
+            handle = s.Schedule(handle);
+
+            m = new MultiplyEqualsJob();
+            m.A = gradients.Layers[l].DCDW;
+            m.Scalar = rate;
+            handle = m.Schedule(handle);
+
+            s = new SubtractEqualsJob();
+            s.A = gradients.Layers[l].DCDW;
+            s.B = net.Layers[l].Weights;
+            handle = s.Schedule(handle);
         }
 
-        UnityEngine.Profiling.Profiler.EndSample();
+        return handle;
     }
-
 }
 
 public struct NativeLayerConfig {
