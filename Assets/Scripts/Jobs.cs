@@ -44,11 +44,11 @@ namespace NeuralJobs {
         [ReadOnly] public NativeArray<float> From;
         [WriteOnly] public NativeArray<float> To;
         [ReadOnly] public int FromStart;
-        [ReadOnly] public int FromLength;
+        [ReadOnly] public int Length;
         [ReadOnly] public int ToStart;
 
         public void Execute() {
-            for (int i = 0; i < FromLength; i++) {
+            for (int i = 0; i < Length; i++) {
                 To[ToStart + i] = From[FromStart + i];
             }
         }
@@ -93,11 +93,11 @@ namespace NeuralJobs {
 
     [BurstCompile]
     public struct SigmoidEqualsJob : IJob {
-        public NativeArray<float> A;
+        public NativeArray<float> Data;
 
         public void Execute() {
-            for (int i = 0; i < A.Length; i++) {
-                A[i] = JobMath.Sigmoid(A[i]);
+            for (int i = 0; i < Data.Length; i++) {
+                Data[i] = JobMath.Sigmoid(Data[i]);
             }
         }
     }
