@@ -2,6 +2,7 @@ using Unity.Jobs;
 using Unity.Collections;
 using static Unity.Mathematics.math;
 using UnityEngine;
+using Unity.Burst;
 
 /* Todo:
 - Reference types not allowed in jobs, so we can't pass along a System.Random instance.
@@ -35,15 +36,44 @@ namespace NeuralJobs {
         }
     }
 
-    public struct CopyToJob : IJob {
-        public NativeArray<float> A;
-        public NativeArray<float> T;
+    [BurstCompile]
+    public struct CopyInputJob : IJob {
+        [ReadOnly] public NativeArray<float> A;
+        [WriteOnly] public NativeArray<float> B;
+        [ReadOnly] public int AStart;
+        [ReadOnly] public int ALength;
+        [ReadOnly] public int BStart;
 
         public void Execute() {
-            if (A.Length != T.Length) {
-                Debug.LogError("Arrays need to be of same length.");
-                return;
+            for (int i = 0; i < ALength; i++) {
+                B[BStart + i] = A[AStart + i];
             }
+        }
+    }
+
+    [BurstCompile]
+    public struct CopyInputParallelJob : IJobParallelFor {
+        [ReadOnly] public NativeArray<float> A;
+        [WriteOnly] public NativeArray<float> B;
+        [ReadOnly] public int AStart;
+        [ReadOnly] public int ALength;
+        [ReadOnly] public int BStart;
+
+        public void Execute(int i) {
+            B[BStart + i] = A[AStart + i];
+        }
+    }
+
+    [BurstCompile]
+    public struct CopyToJob : IJob {
+        [ReadOnly] public NativeArray<float> A;
+        [WriteOnly] public NativeArray<float> T;
+
+        public void Execute() {
+            // if (A.Length != T.Length) {
+            //     Debug.LogError("Arrays need to be of same length.");
+            //     return;
+            // }
 
             for (int i = 0; i < A.Length; i++) {
                 T[i] = A[i];
@@ -64,6 +94,7 @@ namespace NeuralJobs {
     //     }
     // }
 
+    [BurstCompile]
     public struct SigmoidJob : IJob {
         public NativeArray<float> A;
 
@@ -74,6 +105,7 @@ namespace NeuralJobs {
         }
     }
 
+    [BurstCompile]
     public struct SubtractJob : IJob {
         [ReadOnly] public NativeArray<float> A;
         [ReadOnly] public NativeArray<float> B;
@@ -92,6 +124,7 @@ namespace NeuralJobs {
     }
 
     // Calculates transpose(weights) * inputs
+    [BurstCompile]
     public struct DotJob : IJob {
         [ReadOnly] public NativeArray<float> Input;
         [ReadOnly] public NativeArray<float> Weights;
@@ -111,6 +144,7 @@ namespace NeuralJobs {
 
     // Todo: The way backwards passes are written needs lots of restructuring
 
+    [BurstCompile]
     public struct BackwardsFinalJob : IJob {
         [ReadOnly] public NativeArray<float> DCDO;
         [ReadOnly] public NativeArray<float> OutputsPrev;
@@ -130,6 +164,7 @@ namespace NeuralJobs {
         }
     }
 
+    [BurstCompile]
     public struct BackwardsJob : IJob {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> WeightsNext;

@@ -361,14 +361,10 @@ public static class NetUtils {
     }
 
     public static void Forward(Network net) {
-        UnityEngine.Profiling.Profiler.BeginSample("Forward");
-
         float[] input = net.Input;
         for (int l = 1; l < net.Layers.Count; l++) {
             input = net.Layers[l].Forward(input);
         }
-
-        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     public static void Backward(Network net, float[] target) {

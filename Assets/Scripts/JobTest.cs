@@ -56,12 +56,16 @@ public class JobTest : MonoBehaviour {
         _random = new System.Random(1234);
 
         var config = new NativeNetworkConfig();
-        config.Layers.Add(new NativeLayerConfig { Neurons = 786 });
+        config.Layers.Add(new NativeLayerConfig { Neurons = Mnist.Train.ImgDims });
         config.Layers.Add(new NativeLayerConfig { Neurons = 30 });
         config.Layers.Add(new NativeLayerConfig { Neurons = 10 });
 
         _net = new NativeNetwork(config);
         Initialize(_random, _net);
+        for (int i = 0; i < _net.Layers.Length; i++) {
+            Debug.Log(_net.Layers[i].Outputs.Length + ", " + _net.Layers[i].Weights.Length);
+        }
+        
         _optimizer = new NativeOptimizer(config);
     }
     
@@ -95,18 +99,22 @@ public class JobTest : MonoBehaviour {
     private void Test() {
         UnityEngine.Profiling.Profiler.BeginSample("Test");
 
-        NativeArray<float> input = new NativeArray<float>(Mnist.Test.ImgDims, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        NativeArray<float> input = new NativeArray<float>(Mnist.Test.ImgDims, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
 
         int correctTestLabels = 0;
         for (int i = 0; i < Mnist.Test.NumImgs; i++) {
             int lbl = Mnist.Test.Labels[i];
 
-            // Copy image to input layer (Todo: this is a waste of time/memory)
-            for (int p = 0; p < Mnist.Test.ImgDims; p++) {
-                input[p] = Mnist.Test.Images[i * Mnist.Test.ImgDims + p];
-            }
+            var copyInputJob = new CopyInputJob();
+            copyInputJob.A = Mnist.Test.Images;
+            copyInputJob.B = input;
+            copyInputJob.ALength = Mnist.Test.ImgDims;
+            copyInputJob.AStart = i * Mnist.Test.ImgDims;
+            copyInputJob.BStart = 0;
+            var handle = copyInputJob.Schedule();
 
-            var handle = ScheduleForwardPass(_net, input);
+            handle = ScheduleForwardPass(_net, input, handle);
+
             handle.Complete();
 
             int predictedLbl = GetMaxOutput(_net.Last.Outputs);
@@ -136,8 +144,7 @@ public class JobTest : MonoBehaviour {
         return idx;
     }
 
-    private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input) {
-        JobHandle h = new JobHandle(); // Todo: is passing a null-job to job.Schedule really ok? Seems to work.
+    private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input, JobHandle handle) {
         NativeArray<float> lastOut = input;
 
         for (int l = 0; l < net.Layers.Length; l++) {
@@ -146,23 +153,22 @@ public class JobTest : MonoBehaviour {
             var addBiasJob = new CopyToJob();
             addBiasJob.A = layer.Biases;
             addBiasJob.T = layer.Outputs;
-            h = addBiasJob.Schedule(h);
+            handle = addBiasJob.Schedule(handle);
 
-            // var dotJob = new DotJob();
-            // dotJob.Input = lastOut;
-            // dotJob.Weights = layer.Weights;
-            // dotJob.Output = layer.Outputs;
+            var dotJob = new DotJob();
+            dotJob.Input = lastOut;
+            dotJob.Weights = layer.Weights;
+            dotJob.Output = layer.Outputs;
+            handle = dotJob.Schedule(handle);
 
-            // h = dotJob.Schedule(h);
+            var sigmoidJob = new SigmoidJob();
+            sigmoidJob.A = layer.Outputs;
+            handle = sigmoidJob.Schedule(handle);
 
-            // var sigmoidJob = new SigmoidJob();
-            // sigmoidJob.A = layer.Outputs;
-            // h = sigmoidJob.Schedule(h);
-
-            // lastOut = layer.Outputs;
+            lastOut = layer.Outputs;
         }
 
-        return h;
+        return handle;
     }
 
     private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeOptimizer optimizer, NativeArray<float> input, NativeArray<float> target, JobHandle handle) {

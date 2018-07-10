@@ -163,10 +163,7 @@ public class MnistTraining : MonoBehaviour {
         for (int i = 0; i < Mnist.Test.NumImgs; i++) {
             int lbl = Mnist.Test.Labels[i];
 
-            // Copy image to input layer (Todo: this is a waste of time/memory)
-            for (int p = 0; p < Mnist.Test.ImgDims; p++) {
-                _net.Input[p] = Mnist.Test.Images[i, p];
-            }
+            CopyInputs(_net, i);
 
             NetUtils.Forward(_net);
             int predictedLbl = NetUtils.GetMaxOutput(_net);
@@ -180,6 +177,12 @@ public class MnistTraining : MonoBehaviour {
         Debug.Log("Test Accuracy: " + Math.Round(accuracy * 100f, 4) + "%");
             
         UnityEngine.Profiling.Profiler.EndSample();
+    }
+
+    private static void CopyInputs(Network net, int imgIdx) {
+        for (int p = 0; p < Mnist.Test.ImgDims; p++) {
+            net.Input[p] = Mnist.Test.Images[imgIdx, p];
+        }
     }
 
     private static void ZeroGradients(Network bucket) {
