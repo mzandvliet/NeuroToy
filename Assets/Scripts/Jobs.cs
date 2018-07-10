@@ -106,6 +106,18 @@ namespace NeuralJobs {
     }
 
     [BurstCompile]
+    public struct AddJob : IJob {
+        [ReadOnly] public NativeArray<float> A;
+        public NativeArray<float> B;
+
+        public void Execute() {
+            for (int i = 0; i < A.Length; i++) {
+                B[i] += A[i];
+            }
+        }
+    }
+
+    [BurstCompile]
     public struct SubtractJob : IJob {
         [ReadOnly] public NativeArray<float> A;
         [ReadOnly] public NativeArray<float> B;

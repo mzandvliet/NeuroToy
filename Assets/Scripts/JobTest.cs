@@ -57,6 +57,7 @@ public class JobTest : MonoBehaviour {
     float _rate;
 
     private void Awake() {
+        Application.runInBackground = true;
         Mnist.Load();
 
         _random = new System.Random(1234);
@@ -170,9 +171,11 @@ public class JobTest : MonoBehaviour {
             // Calculate per-parameter gradient, store it
 
             handle = ScheduleBackwardsPass(_net, _optimizer, input, target, handle);
+            handle = ScheduleAddGradients(_optimizer, _gradientBucket, handle);
+
             handle.Complete();
             
-            AddGradients(_optimizer, _gradientBucket);
+            //AddGradients(_optimizer, _gradientBucket);
         }
 
         avgTrainCost /= (float)batchSize;
@@ -346,29 +349,21 @@ public class JobTest : MonoBehaviour {
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
-    private static void AddGradients(NativeOptimizer gradExample, NativeOptimizer gradBatch) {
-        UnityEngine.Profiling.Profiler.BeginSample("AddGradients");
+    private static JobHandle ScheduleAddGradients(NativeOptimizer a, NativeOptimizer b, JobHandle handle) {
+        // Todo: parallelize over layers and/or biases/weights
+        for (int l = 0; l < a.Layers.Length; l++) {
+            var addBiasJob = new AddJob();
+            addBiasJob.A = a.Layers[l].DCDZ;
+            addBiasJob.B = b.Layers[l].DCDZ;
+            handle = addBiasJob.Schedule(handle);
 
-        var lCount = gradBatch.Layers.Length;
-        for (int l = 0; l < lCount; l++) {
-            var dCdZGradients = gradBatch.Layers[l].DCDZ;
-            var dCdZNet = gradExample.Layers[l].DCDZ;
-            var nCount = gradBatch.Layers[l].NumNeurons;
-
-            for (int n = 0; n < nCount; n++) {
-                dCdZGradients[n] += dCdZNet[n];
-
-                var dCdWGradients = gradBatch.Layers[l].DCDW;
-                var dCdWNet = gradExample.Layers[l].DCDW;
-                var wCount = gradBatch.Layers[l].DCDW.Length;
-
-                for (int w = 0; w < wCount; w++) {
-                    dCdWGradients[w] += dCdWNet[w];
-                }
-            }
+            var addWeightsJob = new AddJob();
+            addWeightsJob.A = a.Layers[l].DCDW;
+            addWeightsJob.B = b.Layers[l].DCDW;
+            handle = addWeightsJob.Schedule(handle);
         }
 
-        UnityEngine.Profiling.Profiler.EndSample();
+        return handle;
     }
 
     public static void UpdateParameters(NativeNetwork net, NativeOptimizer gradients, float learningRate) {
