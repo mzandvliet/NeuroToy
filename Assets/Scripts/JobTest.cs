@@ -49,6 +49,12 @@ public class JobTest : MonoBehaviour {
 
     private NativeNetwork _net;
     private NativeOptimizer _optimizer;
+    private NativeOptimizer _gradientBucket;
+
+    int _epoch;
+    int _batch;
+    float _trainingLoss;
+    float _rate;
 
     private void Awake() {
         Mnist.Load();
@@ -62,23 +68,42 @@ public class JobTest : MonoBehaviour {
 
         _net = new NativeNetwork(config);
         Initialize(_random, _net);
-        for (int i = 0; i < _net.Layers.Length; i++) {
-            Debug.Log(_net.Layers[i].Outputs.Length + ", " + _net.Layers[i].Weights.Length);
-        }
         
         _optimizer = new NativeOptimizer(config);
+        _gradientBucket = new NativeOptimizer(config);
     }
     
     private void Update() {
-        if (Input.GetKeyDown(KeyCode.T)) {
-            Test();
+        if (_epoch < 30) {
+            if (_batch < 6000) {
+                    TrainMinibatch();
+            } else {
+                Test();
+                _batch = 0;
+                _epoch++;
+            }
         }
+    }
+
+    private void OnGUI() {
+        GUILayout.BeginVertical(GUI.skin.box);
+        {
+            GUILayout.Label("Epoch: " + _epoch);
+            GUILayout.Label("Batch: " + _batch);
+            GUILayout.Label("Train Loss: " + _trainingLoss);
+            GUILayout.Label("Rate: " + _rate);
+        }
+        GUILayout.EndVertical();
+
+        // GUI.Label(new Rect(0f, 32f, 280f, 32f), "Label: " + _label);
+        // GUI.DrawTexture(new Rect(0f, 64f, 280f, 280f), _tex, ScaleMode.ScaleToFit);
     }
 
     private void OnDestroy() {
         Mnist.Unload();
         _net.Dispose();
         _optimizer.Dispose();
+        _gradientBucket.Dispose();
     }
 
     private static void Initialize(System.Random random, NativeNetwork net) {
@@ -94,6 +119,83 @@ public class JobTest : MonoBehaviour {
         for (int i = 0; i < values.Length; i++) {
             values[i] = Old.Utils.Gaussian(random, mean, std);
         }
+    }
+
+    private void TrainMinibatch() {
+        UnityEngine.Profiling.Profiler.BeginSample("TrainMiniBatch");
+
+        const int numClasses = 10;
+        const int batchSize = 10;
+
+        var target = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        var dCdO = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        var input = new NativeArray<float>(Mnist.Test.ImgDims, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+
+        float avgTrainCost = 0f;
+        int correctTrainLabels = 0;
+
+        ResetOptimizer(_gradientBucket); // Todo: need avgGradient thing
+
+        var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
+        for (int i = 0; i < trainBatch.Indices.Length; i++) {
+            int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
+
+            var copyInputJob = new CopyInputJob();
+            copyInputJob.A = Mnist.Test.Images;
+            copyInputJob.B = input;
+            copyInputJob.ALength = Mnist.Test.ImgDims;
+            copyInputJob.AStart = i * Mnist.Test.ImgDims;
+            copyInputJob.BStart = 0;
+            var handle = copyInputJob.Schedule();
+
+            handle = ScheduleForwardPass(_net, input, handle);
+            handle.Complete();
+
+            // Todo: better if we don't Complete here, but chain backprop pass
+
+            int predictedLbl = GetMaxOutput(_net.Last.Outputs);
+            LabelToOneHot(lbl, target);
+
+            if (predictedLbl == lbl) {
+                correctTrainLabels++;
+            }
+            //Debug.Log(outputClass + ", " + batch.Labels[i]);
+
+            // Calculate error between output layer and target
+            Subtract(target, _net.Last.Outputs, dCdO);
+            float cost = Cost(dCdO);
+            avgTrainCost += cost;
+
+            // Propagate error back
+            // Calculate per-parameter gradient, store it
+
+            handle = ScheduleBackwardsPass(_net, _optimizer, input, target, handle);
+            handle.Complete();
+            
+            AddGradients(_optimizer, _gradientBucket);
+        }
+
+        avgTrainCost /= (float)batchSize;
+
+        // Update weights and biases according to averaged gradient and learning rate
+        _rate = 3.0f / (float)batchSize;
+        UpdateParameters(_net, _gradientBucket, _rate);
+
+        _batch++;
+        _trainingLoss = (float)System.Math.Round(avgTrainCost, 6);
+
+        target.Dispose();
+        dCdO.Dispose();
+        input.Dispose();
+
+        // Debug.Log(
+        //     "Batch: " + _batchesTrained +
+        //     ", TrainLoss: " + Math.Round(avgTrainCost, 6) +
+        //     ", Rate: " + Math.Round(rate, 6));
+        // Mnist.ToTexture(batch, batch.Labels.Length-1, _tex);
+        // _label = batch.Labels[batch.Labels.Length-1];
+
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private void Test() {
@@ -114,11 +216,9 @@ public class JobTest : MonoBehaviour {
             var handle = copyInputJob.Schedule();
 
             handle = ScheduleForwardPass(_net, input, handle);
-
             handle.Complete();
 
             int predictedLbl = GetMaxOutput(_net.Last.Outputs);
-
             if (predictedLbl == lbl) {
                 correctTestLabels++;
             }
@@ -132,6 +232,22 @@ public class JobTest : MonoBehaviour {
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
+    private static void Subtract(NativeArray<float> a, NativeArray<float> b, NativeArray<float> result) {
+        if (a.Length != b.Length) {
+            throw new System.ArgumentException("Lengths of arrays have to match");
+        }
+
+        for (int i = 0; i < a.Length; i++) {
+            result[i] = a[i] - b[i];
+        }
+    }
+
+    private static void LabelToOneHot(int label, NativeArray<float> vector) {
+        for (int i = 0; i < vector.Length; i++) {
+            vector[i] = i == label ? 1f : 0f;
+        }
+    }
+
     private static int GetMaxOutput(NativeArray<float> data) {
         float largestActivation = float.MinValue;
         int idx = 0;
@@ -142,6 +258,14 @@ public class JobTest : MonoBehaviour {
             }
         }
         return idx;
+    }
+
+    private static float Cost(NativeArray<float> vector) {
+        float sum = 0f;
+        for (int i = 0; i < vector.Length; i++) {
+            sum += vector[i] * vector[i];
+        }
+        return Unity.Mathematics.math.sqrt(sum);
     }
 
     private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input, JobHandle handle) {
@@ -201,6 +325,69 @@ public class JobTest : MonoBehaviour {
 
         return h;
     }
+
+    // Todo: jobify
+    private static void ResetOptimizer(NativeOptimizer optimizer) {
+        UnityEngine.Profiling.Profiler.BeginSample("ResetOptimizer");
+
+        for (int l = 0; l < optimizer.Layers.Length; l++) {
+            var dcdz = optimizer.Layers[l].DCDZ;
+
+            for (int n = 0; n < dcdz.Length; n++) {
+                dcdz[n] = 0f;
+                
+                var dcdw = optimizer.Layers[l].DCDW;
+                for (int w = 0; w < dcdw.Length; w++) {
+                    optimizer.Layers[l].DCDW[w] = 0f;
+                }
+            }
+        }
+
+        UnityEngine.Profiling.Profiler.EndSample();
+    }
+
+    private static void AddGradients(NativeOptimizer gradExample, NativeOptimizer gradBatch) {
+        UnityEngine.Profiling.Profiler.BeginSample("AddGradients");
+
+        var lCount = gradBatch.Layers.Length;
+        for (int l = 0; l < lCount; l++) {
+            var dCdZGradients = gradBatch.Layers[l].DCDZ;
+            var dCdZNet = gradExample.Layers[l].DCDZ;
+            var nCount = gradBatch.Layers[l].NumNeurons;
+
+            for (int n = 0; n < nCount; n++) {
+                dCdZGradients[n] += dCdZNet[n];
+
+                var dCdWGradients = gradBatch.Layers[l].DCDW;
+                var dCdWNet = gradExample.Layers[l].DCDW;
+                var wCount = gradBatch.Layers[l].DCDW.Length;
+
+                for (int w = 0; w < wCount; w++) {
+                    dCdWGradients[w] += dCdWNet[w];
+                }
+            }
+        }
+
+        UnityEngine.Profiling.Profiler.EndSample();
+    }
+
+    public static void UpdateParameters(NativeNetwork net, NativeOptimizer gradients, float learningRate) {
+        UnityEngine.Profiling.Profiler.BeginSample("UpdateParameters");
+
+        for (int l = 0; l < net.Layers.Length; l++) {
+            int nCount = net.Layers[l].Outputs.Length;
+            for (int n = 0; n < nCount; n++) {
+                net.Layers[l].Biases[n] -= gradients.Layers[l].DCDZ[n] * learningRate;
+
+                for (int w = 0; w < net.Layers[l].Weights.Length; w++) {
+                    net.Layers[l].Weights[w] -= gradients.Layers[l].DCDW[w] * learningRate;
+                }
+            }
+        }
+
+        UnityEngine.Profiling.Profiler.EndSample();
+    }
+
 }
 
 public struct NativeLayerConfig {
@@ -220,11 +407,15 @@ public class NativeNetworkLayer : System.IDisposable {
     public NativeArray<float> Biases;
     public NativeArray<float> Weights;
     public NativeArray<float> Outputs;
+    public readonly int NumNeurons;
+    public readonly int NumInputs;
 
     public NativeNetworkLayer(int numNeurons, int numInputs) {
         Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        NumNeurons = numNeurons;
+        NumInputs = numInputs;
     }
 
     public void Dispose() {
@@ -258,10 +449,14 @@ public class NativeNetwork : System.IDisposable {
 public class NativeOptimizerLayer : System.IDisposable {
     public NativeArray<float> DCDZ;
     public NativeArray<float> DCDW;
+    public readonly int NumNeurons;
+    public readonly int NumInputs;
 
     public NativeOptimizerLayer(int numNeurons, int numInputs) {
         DCDZ = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         DCDW = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        NumNeurons = numNeurons;
+        NumInputs = numInputs;
     }
 
     public void Dispose() {
@@ -273,6 +468,7 @@ public class NativeOptimizerLayer : System.IDisposable {
 public class NativeOptimizer : System.IDisposable {
     public NativeOptimizerLayer[] Layers;
     public NativeArray<float> DCDO;
+    public NativeNetworkConfig Config;
 
     public NativeOptimizerLayer Last {
         get { return Layers[Layers.Length - 1]; }
@@ -285,6 +481,7 @@ public class NativeOptimizer : System.IDisposable {
         }
 
         DCDO = new NativeArray<float>(config.Layers[config.Layers.Count - 1].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        Config = config;
     }
 
     public void Dispose() {

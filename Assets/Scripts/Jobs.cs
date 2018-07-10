@@ -112,10 +112,10 @@ namespace NeuralJobs {
         public NativeArray<float> T;
 
         public void Execute() {
-            if (A.Length != B.Length || A.Length != T.Length) {
-                Debug.LogError("Arrays need to be of same length.");
-                return;
-            }
+            // if (A.Length != B.Length || A.Length != T.Length) {
+            //     Debug.LogError("Arrays need to be of same length.");
+            //     return;
+            // }
 
             for (int i = 0; i < A.Length; i++) {
                 T[i] = A[i] - B[i];
@@ -143,7 +143,6 @@ namespace NeuralJobs {
     }
 
     // Todo: The way backwards passes are written needs lots of restructuring
-
     [BurstCompile]
     public struct BackwardsFinalJob : IJob {
         [ReadOnly] public NativeArray<float> DCDO;
