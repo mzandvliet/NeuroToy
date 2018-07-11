@@ -73,22 +73,22 @@ public class JobTest : MonoBehaviour {
         _gradients = new NativeGradients(config);
         _gradientsAvg = new NativeGradients(config);
 
-        TrainMinibatch();
+        // TrainMinibatch();
         //Test();
     }
     
     private void Update() {
-        // if (_epoch < 30) {
-        //     if (_batch < 6000) {
-        //         for (int i = 0; i < 50; i++) {
-        //             TrainMinibatch();
-        //         }
-        //     } else {
-        //         Test();
-        //         _batch = 0;
-        //         _epoch++;
-        //     }
-        // }
+        if (_epoch < 30) {
+            if (_batch < 6000) {
+                for (int i = 0; i < 50; i++) {
+                    TrainMinibatch();
+                }
+            } else {
+                Test();
+                _batch = 0;
+                _epoch++;
+            }
+        }
 
         // if (Input.GetKeyDown(KeyCode.Space)) {
         //     for (int i = 0; i < 1; i++) {
@@ -137,7 +137,7 @@ public class JobTest : MonoBehaviour {
         UnityEngine.Profiling.Profiler.BeginSample("TrainMiniBatch");
 
         const int numClasses = 10;
-        const int batchSize = 2;
+        const int batchSize = 10;
 
         var target = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
         var dCdO = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
@@ -165,8 +165,8 @@ public class JobTest : MonoBehaviour {
             LabelToOneHot(lbl, target);
 
             handle = ScheduleForwardPass(_net, input, handle);
-            // handle = ScheduleBackwardsPass(_net, _gradients, input, target, handle);
-            // handle = ScheduleAddGradients(_gradients, _gradientsAvg, handle);
+            handle = ScheduleBackwardsPass(_net, _gradients, input, target, handle);
+            handle = ScheduleAddGradients(_gradients, _gradientsAvg, handle);
             handle.Complete();
 
             // Print(_net.Last.Outputs);
@@ -211,7 +211,6 @@ public class JobTest : MonoBehaviour {
             copyInputJob.ToStart = 0;
             var handle = copyInputJob.Schedule();
 
-            Initialize(_random, _net); // WHAT! THIS DOESNT MATTER
             handle = ScheduleForwardPass(_net, input, handle);
             handle.Complete();
 
@@ -280,15 +279,10 @@ public class JobTest : MonoBehaviour {
         for (int l = 0; l < net.Layers.Length; l++) {
             var layer = net.Layers[l];
 
-            Debug.Log(l);
-
-            // var b = new CopyJob();
-            // b.From = layer.Biases;
-            // b.To = layer.Outputs;
-            // handle = b.Schedule(handle);
-
-            // handle.Complete();
-            // Print(layer.Outputs);
+            var b = new CopyJob();
+            b.From = layer.Biases;
+            b.To = layer.Outputs;
+            handle = b.Schedule(handle);
 
             var d = new DotJob();
             d.Input = last;
@@ -296,15 +290,9 @@ public class JobTest : MonoBehaviour {
             d.Output = layer.Outputs;
             handle = d.Schedule(handle);
 
-            // handle.Complete();
-            // Print(layer.Outputs);
-
-            // var s = new SigmoidEqualsJob();
-            // s.Data = layer.Outputs;
-            // handle = s.Schedule(handle);
-
-            handle.Complete();
-            Print(layer.Outputs);
+            var s = new SigmoidEqualsJob();
+            s.Data = layer.Outputs;
+            handle = s.Schedule(handle);
 
             last = layer.Outputs;
         }

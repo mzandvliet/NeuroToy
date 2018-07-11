@@ -165,7 +165,6 @@ namespace NeuralJobs {
                 for (int i = 0; i < Input.Length; i++) {
                     Output[n] += Input[i] * Weights[Input.Length * n + i];
                 }
-                Output[n] /= (float)Input.Length;
             }
         }
     }
