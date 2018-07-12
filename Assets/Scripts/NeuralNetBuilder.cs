@@ -293,7 +293,7 @@ public class DeterministicWeightBiasLayer : ILayer {
 
     public void BackwardFinal(ILayer prev, float[] target) {
         float[] dCdO = new float[target.Length];
-        Mnist.Subtract(_o, target, dCdO);
+        NetUtils.Subtract(_o, target, dCdO);
 
         for (int n = 0; n < _o.Length; n++) {
             float dOdZ = _actD(_o[n]); // Reuses forward pass evaluation of act(z)
@@ -323,15 +323,35 @@ public class DeterministicWeightBiasLayer : ILayer {
 }
 
 public static class NetUtils {
-    public static void Forward(Network net) {
-        UnityEngine.Profiling.Profiler.BeginSample("Forward");
+    public static void LabelToOneHot(int label, float[] vector) {
+        for (int i = 0; i < vector.Length; i++) {
+            vector[i] = i == label ? 1f : 0f;
+        }
+    }
 
+    public static void Subtract(float[] a, float[] b, float[] result) {
+        if (a.Length != b.Length) {
+            throw new System.ArgumentException("Lengths of arrays have to match");
+        }
+
+        for (int i = 0; i < a.Length; i++) {
+            result[i] = a[i] - b[i];
+        }
+    }
+
+    public static float Cost(float[] vector) {
+        float sum = 0f;
+        for (int i = 0; i < vector.Length; i++) {
+            sum += vector[i] * vector[i];
+        }
+        return Mathf.Sqrt(sum);
+    }
+
+    public static void Forward(Network net) {
         float[] input = net.Input;
         for (int l = 1; l < net.Layers.Count; l++) {
             input = net.Layers[l].Forward(input);
         }
-
-        UnityEngine.Profiling.Profiler.EndSample();
     }
 
     public static void Backward(Network net, float[] target) {
