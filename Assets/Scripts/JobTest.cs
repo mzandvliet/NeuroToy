@@ -173,16 +173,13 @@ public class JobTest : MonoBehaviour {
             copyInputJob.FromStart = _batch[i] * Mnist.Train.ImgDims;
             copyInputJob.ToStart = 0;
             handle = copyInputJob.Schedule();
-            handle.Complete();
-
-            LabelToOneHot(lbl, _targetOutputs); // Todo: job
 
             handle = ScheduleForwardPass(_net, _inputs, handle);
+
+            LabelToOneHot(lbl, _targetOutputs); // Todo: job
             handle = ScheduleBackwardsPass(_net, _gradients, _inputs, _targetOutputs, handle);
             handle = ScheduleAddGradients(_gradients, _gradientsAvg, handle);
             handle.Complete();
-
-            // Print(_net.Last.Outputs);
 
             // Todo: backwards pass logic now does this, don't redo, just check
             Subtract(_targetOutputs, _net.Last.Outputs, _dCdO);
