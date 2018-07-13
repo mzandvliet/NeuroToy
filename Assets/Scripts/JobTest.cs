@@ -287,20 +287,20 @@ public class JobTest : MonoBehaviour {
         for (int l = 0; l < net.Layers.Length; l++) {
             var layer = net.Layers[l];
 
-            var b = new CopyJob();
+            var b = new CopyParallelJob();
             b.From = layer.Biases;
             b.To = layer.Outputs;
-            handle = b.Schedule(handle);
+            handle = b.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
 
-            var d = new DotJob();
+            var d = new DotParallelJob();
             d.Input = last;
             d.Weights = layer.Weights;
             d.Output = layer.Outputs;
-            handle = d.Schedule(handle);
+            handle = d.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
 
-            var s = new SigmoidEqualsJob();
+            var s = new SigmoidEqualsParallelJob();
             s.Data = layer.Outputs;
-            handle = s.Schedule(handle);
+            handle = s.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
 
             last = layer.Outputs;
         }
@@ -327,7 +327,7 @@ public class JobTest : MonoBehaviour {
 
         // Note, indexing using net.layers.length here is misleading, since that count is one less than if you include input layer
         for (int l = net.Layers.Length - 2; l >= 0; l--) {
-            var backwardsJob = new BackProbJob();
+            var backwardsJob = new BackPropJob();
             backwardsJob.DCDZNext = gradients.Layers[l+1].DCDZ;
             backwardsJob.WeightsNext = net.Layers[l+1].Weights;
             backwardsJob.DCDZ = gradients.Layers[l].DCDZ;
@@ -335,6 +335,7 @@ public class JobTest : MonoBehaviour {
             backwardsJob.LOutputs = net.Layers[l].Outputs;
             backwardsJob.OutputsPrev = l == 0 ? input : net.Layers[l - 1].Outputs;
             h = backwardsJob.Schedule(h);
+            // h = backwardsJob.Schedule(gradients.Layers[l].NumNeurons, gradients.Layers[l].NumNeurons/8, h);
         }
 
         return h;

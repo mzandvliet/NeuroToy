@@ -80,6 +80,16 @@ namespace NeuralJobs {
     }
 
     [BurstCompile]
+    public struct CopyParallelJob : IJobParallelFor {
+        [ReadOnly] public NativeArray<float> From;
+        [WriteOnly] public NativeArray<float> To;
+
+        public void Execute(int i) {
+            To[i] = From[i];
+        }
+    }
+
+    [BurstCompile]
     public struct SetValueJob : IJob {
         public NativeArray<float> Data;
         [ReadOnly] public float Value;
@@ -99,6 +109,15 @@ namespace NeuralJobs {
             for (int i = 0; i < Data.Length; i++) {
                 Data[i] = JobMath.Sigmoid(Data[i]);
             }
+        }
+    }
+
+    [BurstCompile]
+    public struct SigmoidEqualsParallelJob : IJobParallelFor {
+        public NativeArray<float> Data;
+
+        public void Execute(int i) {
+            Data[i] = JobMath.Sigmoid(Data[i]);
         }
     }
 
@@ -151,6 +170,17 @@ namespace NeuralJobs {
         }
     }
 
+    [BurstCompile]
+    public struct SubtractParallelJob : IJobParallelFor {
+        [ReadOnly] public NativeArray<float> A;
+        [ReadOnly] public NativeArray<float> B;
+        public NativeArray<float> Output;
+
+        public void Execute(int i) {
+            Output[i] = A[i] - B[i];
+        }
+    }
+
     // Calculates transpose(weights) * inputs
     [BurstCompile]
     public struct DotJob : IJob {
@@ -169,6 +199,21 @@ namespace NeuralJobs {
         }
     }
 
+    // Calculates transpose(weights) * inputs
+    [BurstCompile]
+    public struct DotParallelJob : IJobParallelFor {
+        [ReadOnly] public NativeArray<float> Input;
+        [ReadOnly] public NativeArray<float> Weights;
+        public NativeArray<float> Output;
+
+        public void Execute(int n) {
+            // Inner loop is best kep synchronous
+            for (int i = 0; i < Input.Length; i++) {
+                Output[n] += Input[i] * Weights[Input.Length * n + i];
+            }
+        }
+    }
+
     // Todo: The way backwards passes are written needs lots of restructuring
     // First, the index juggling needs to be made more readable. Like indexing
     // the higher layer's weight matrix is a mess right now.
@@ -177,42 +222,45 @@ namespace NeuralJobs {
         [ReadOnly] public NativeArray<float> DCDO;
         [ReadOnly] public NativeArray<float> Outputs;
         [ReadOnly] public NativeArray<float> OutputsPrev;
-        public NativeArray<float> DCDZ;
-        public NativeArray<float> DCDW;
+        [WriteOnly] public NativeArray<float> DCDZ;
+        [WriteOnly] public NativeArray<float> DCDW;
 
         public void Execute() {
             for (int n = 0; n < Outputs.Length; n++) {
                 float dOdZ = JobMath.SigmoidPrime(Outputs[n]); // Reuses forward pass evaluation of act(z)
-                DCDZ[n] = DCDO[n] * dOdZ;
+                float dcdzn = DCDO[n] * dOdZ;
+                DCDZ[n] = dcdzn;
 
                 for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * OutputsPrev.Length + w] = DCDZ[n] * OutputsPrev[w];
+                    DCDW[n * OutputsPrev.Length + w] = dcdzn * OutputsPrev[w];
                 }
             }
         }
     }
 
     [BurstCompile]
-    public struct BackProbJob : IJob {
+    public struct BackPropJob : IJob {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> WeightsNext;
         [ReadOnly] public NativeArray<float> OutputsPrev;
         [ReadOnly] public NativeArray<float> LOutputs;
-        public NativeArray<float> DCDZ;
-        public NativeArray<float> DCDW;
+        [WriteOnly] public NativeArray<float> DCDZ;
+        [WriteOnly] public NativeArray<float> DCDW;
 
         public void Execute() {
             for (int n = 0; n < LOutputs.Length; n++) {
                 float dOdZ = JobMath.SigmoidPrime(LOutputs[n]);
 
-                DCDZ[n] = 0f;
+                float dcdzn = 0f;
                 for (int nNext = 0; nNext < DCDZNext.Length; nNext++) {
-                    DCDZ[n] += DCDZNext[nNext] * WeightsNext[nNext * DCDZ.Length + n];
+                    dcdzn += DCDZNext[nNext] * WeightsNext[nNext * DCDZ.Length + n];
                 }
-                DCDZ[n] *= dOdZ;
+                DCDZ[n] = dcdzn * dOdZ;
 
+                // Todo: how do we parallelize over the weights?
+                // If we try to ParallelFor, compiler complains that we're writing out of bounds
                 for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * OutputsPrev.Length + w] = DCDZ[n] * OutputsPrev[w];
+                    DCDW[n * OutputsPrev.Length + w] = dcdzn * OutputsPrev[w];
                 }
             }
         }
