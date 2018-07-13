@@ -255,7 +255,8 @@ namespace NeuralJobs {
                 for (int nNext = 0; nNext < DCDZNext.Length; nNext++) {
                     dcdzn += DCDZNext[nNext] * WeightsNext[nNext * DCDZ.Length + n];
                 }
-                DCDZ[n] = dcdzn * dOdZ;
+                dcdzn *= dOdZ;
+                DCDZ[n] = dcdzn;
 
                 // Todo: how do we parallelize over the weights?
                 // If we try to ParallelFor, compiler complains that we're writing out of bounds
