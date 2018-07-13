@@ -92,12 +92,12 @@ namespace New {
             return set;
         }
 
-        public static Batch GetBatch(int size, Dataset set, System.Random r) {
+        public static void GetBatch(NativeArray<int> batch, Dataset set, System.Random r) {
             // Todo: can transform dataset to create additional variation
 
             UnityEngine.Profiling.Profiler.BeginSample("GetBatch");
 
-            if (set.Indices.Count < size) {
+            if (set.Indices.Count < batch.Length) {
                 set.Indices.Clear();
                 for (int i = 0; i < set.NumImgs; i++) {
                     set.Indices.Add(i);
@@ -105,15 +105,12 @@ namespace New {
                 Shuffle(set.Indices, r);
             }
 
-            Batch b = new Batch(size);
-            for (int i = 0; i < size; i++) {
-                b.Indices[i] = set.Indices[set.Indices.Count - 1];
+            for (int i = 0; i < batch.Length; i++) {
+                batch[i] = set.Indices[set.Indices.Count - 1];
                 set.Indices.RemoveAt(set.Indices.Count - 1);
             }
 
             UnityEngine.Profiling.Profiler.EndSample();
-
-            return b;
         }
 
         public static void Shuffle<T>(IList<T> list, System.Random r) {
@@ -140,14 +137,6 @@ namespace New {
 
             tex.SetPixels(0, 0, set.Rows, set.Cols, colors);
             tex.Apply(false);
-        }
-    }
-
-    public class Batch {
-        public int[] Indices;
-
-        public Batch(int size) {
-            Indices = new int[size];
         }
     }
 }
