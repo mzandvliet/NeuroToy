@@ -56,6 +56,8 @@ public class JobTest : MonoBehaviour {
     float _trainingLoss;
     float _rate;
 
+    System.Diagnostics.Stopwatch _watch;
+
     private void Awake() {
         Application.runInBackground = true;
         Mnist.Load();
@@ -73,28 +75,25 @@ public class JobTest : MonoBehaviour {
         _gradients = new NativeGradients(config);
         _gradientsAvg = new NativeGradients(config);
 
-        // TrainMinibatch();
-        //Test();
+        _watch = System.Diagnostics.Stopwatch.StartNew();
     }
     
     private void Update() {
         if (_epoch < 30) {
             if (_batch < 6000) {
-                for (int i = 0; i < 50; i++) {
+                for (int i = 0; i < 100; i++) {
                     TrainMinibatch();
                 }
             } else {
-                Test();
                 _batch = 0;
                 _epoch++;
             }
+        } else {
+            Test();
+            _watch.Stop();
+            Debug.Log("Time taken: " + System.Math.Round(_watch.ElapsedMilliseconds / 1000.0) + " seconds");
+            gameObject.SetActive(false);
         }
-
-        // if (Input.GetKeyDown(KeyCode.Space)) {
-        //     for (int i = 0; i < 1; i++) {
-        //             TrainMinibatch();
-        //     }
-        // }
     }
 
     private void OnGUI() {
@@ -162,7 +161,7 @@ public class JobTest : MonoBehaviour {
             handle = copyInputJob.Schedule();
             handle.Complete();
 
-            LabelToOneHot(lbl, target);
+            LabelToOneHot(lbl, target); // Todo: job
 
             handle = ScheduleForwardPass(_net, input, handle);
             handle = ScheduleBackwardsPass(_net, _gradients, input, target, handle);
