@@ -99,6 +99,7 @@ public class JobTest : MonoBehaviour {
                     TrainMinibatch();
                 }
             } else {
+                Test();
                 _batchCount = 0;
                 _epochCount++;
             }
