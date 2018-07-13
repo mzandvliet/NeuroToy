@@ -61,7 +61,7 @@ public class MnistTraining : MonoBehaviour {
     private void Update() {
         if (_epoch < 30) {
             if (_batch < 6000) {
-                for (int i = 0; i < 10; i++) {
+                for (int i = 0; i < 100; i++) {
                     TrainMinibatch();
                 }
             } else {

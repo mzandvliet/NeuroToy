@@ -51,15 +51,24 @@ public class JobTest : MonoBehaviour {
     private NativeGradients _gradients;
     private NativeGradients _gradientsAvg;
 
-    int _epoch;
-    int _batch;
+    private NativeArray<int> _batch;
+    NativeArray<float> _targetOutputs;
+    NativeArray<float> _dCdO;
+    NativeArray<float> _inputs;
+
+    int _epochCount;
+    int _batchCount;
     float _trainingLoss;
     float _rate;
+
+    const int OutputClassCount = 10;
+    const int BatchSize = 10;
 
     System.Diagnostics.Stopwatch _watch;
 
     private void Awake() {
         Application.runInBackground = true;
+
         Mnist.Load();
 
         _random = new System.Random();
@@ -74,19 +83,24 @@ public class JobTest : MonoBehaviour {
 
         _gradients = new NativeGradients(config);
         _gradientsAvg = new NativeGradients(config);
+        _batch = new NativeArray<int>(BatchSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+
+        _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        _dCdO = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        _inputs = new NativeArray<float>(Mnist.Test.ImgDims, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
         _watch = System.Diagnostics.Stopwatch.StartNew();
     }
     
     private void Update() {
-        if (_epoch < 30) {
-            if (_batch < 6000) {
+        if (_epochCount < 30) {
+            if (_batchCount < 6000) {
                 for (int i = 0; i < 100; i++) {
                     TrainMinibatch();
                 }
             } else {
-                _batch = 0;
-                _epoch++;
+                _batchCount = 0;
+                _epochCount++;
             }
         } else {
             Test();
@@ -99,8 +113,8 @@ public class JobTest : MonoBehaviour {
     private void OnGUI() {
         GUILayout.BeginVertical(GUI.skin.box);
         {
-            GUILayout.Label("Epoch: " + _epoch);
-            GUILayout.Label("Batch: " + _batch);
+            GUILayout.Label("Epoch: " + _epochCount);
+            GUILayout.Label("Batch: " + _batchCount);
             GUILayout.Label("Train Loss: " + _trainingLoss);
             GUILayout.Label("Rate: " + _rate);
         }
@@ -112,9 +126,15 @@ public class JobTest : MonoBehaviour {
 
     private void OnDestroy() {
         Mnist.Unload();
+
         _net.Dispose();
         _gradients.Dispose();
         _gradientsAvg.Dispose();
+
+        _batch.Dispose();
+        _targetOutputs.Dispose();
+        _dCdO.Dispose();
+        _inputs.Dispose();
     }
 
     private static void Initialize(System.Random random, NativeNetwork net) {
@@ -135,60 +155,49 @@ public class JobTest : MonoBehaviour {
     private void TrainMinibatch() {
         UnityEngine.Profiling.Profiler.BeginSample("TrainMiniBatch");
 
-        const int numClasses = 10;
-        const int batchSize = 10;
-
-        var target = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-        var dCdO = new NativeArray<float>(numClasses, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-        var input = new NativeArray<float>(Mnist.Test.ImgDims, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-
         float avgTrainCost = 0f;
 
         var handle = ScheduleZeroGradients(_gradientsAvg, new JobHandle());
         handle.Complete(); // Todo: is this needed?
 
-        var batch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
+        Mnist.GetBatch(_batch, Mnist.Train, _random);
         
-        for (int i = 0; i < batch.Indices.Length; i++) {
-            int lbl = Mnist.Train.Labels[batch.Indices[i]];
+        for (int i = 0; i < _batch.Length; i++) {
+            int lbl = Mnist.Train.Labels[_batch[i]];
 
             var copyInputJob = new CopySubsetJob();
             copyInputJob.From = Mnist.Train.Images;
-            copyInputJob.To = input;
+            copyInputJob.To = _inputs;
             copyInputJob.Length = Mnist.Train.ImgDims;
-            copyInputJob.FromStart = batch.Indices[i] * Mnist.Train.ImgDims;
+            copyInputJob.FromStart = _batch[i] * Mnist.Train.ImgDims;
             copyInputJob.ToStart = 0;
             handle = copyInputJob.Schedule();
             handle.Complete();
 
-            LabelToOneHot(lbl, target); // Todo: job
+            LabelToOneHot(lbl, _targetOutputs); // Todo: job
 
-            handle = ScheduleForwardPass(_net, input, handle);
-            handle = ScheduleBackwardsPass(_net, _gradients, input, target, handle);
+            handle = ScheduleForwardPass(_net, _inputs, handle);
+            handle = ScheduleBackwardsPass(_net, _gradients, _inputs, _targetOutputs, handle);
             handle = ScheduleAddGradients(_gradients, _gradientsAvg, handle);
             handle.Complete();
 
             // Print(_net.Last.Outputs);
 
             // Todo: backwards pass logic now does this, don't redo, just check
-            Subtract(target, _net.Last.Outputs, dCdO);
-            float cost = Cost(dCdO);
+            Subtract(_targetOutputs, _net.Last.Outputs, _dCdO);
+            float cost = Cost(_dCdO);
             avgTrainCost += cost;
         }
 
-        avgTrainCost /= (float)batchSize;
+        avgTrainCost /= (float)BatchSize;
 
         // Update weights and biases according to averaged gradient and learning rate
-        _rate = 3.0f / (float)batchSize;
+        _rate = 3.0f / (float)BatchSize;
         handle = ScheduleUpdateParameters(_net, _gradientsAvg, _rate, new JobHandle());
         handle.Complete(); // Todo: Is this one needed?
 
-        _batch++;
+        _batchCount++;
         _trainingLoss = (float)System.Math.Round(avgTrainCost, 6);
-
-        target.Dispose();
-        dCdO.Dispose();
-        input.Dispose();
 
         UnityEngine.Profiling.Profiler.EndSample();
     }
