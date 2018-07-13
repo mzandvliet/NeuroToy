@@ -1,25 +1,12 @@
 ﻿/*
  * Functional/declarative neural net builder
  * 
- * A net = an ordered set of layers
- * 
- * A layer = 
- *   - neurons, with sets of params (type can vary, but all are a bag-of-floats)
- *   - activation type (the function that aggregates connections into final value)
- *   
- * This setup will allow us to mix and match layer types, such as:
- * - Using both deterministic and stochastic layers
- * - Using different activation functions
- */
-
-/* Todo:
+ * Todo:
+ * - This is an ugly mess now!!!
+ * - ILayer abstraction is terrible
+ * - Should separate network and optimizer data strctures
  * - Reimplement using Burst/ComputeShaders
- * - Offer abstract bag-of-floats interface to optimizer
- * - Offer abstract input output mapping interface to evaluator
- * - Leave the rest of the interface black box
- * 
- * This will allow us to write optimizers that work on any neural net or policy
- * that is parameterized by floats
+ * - Retain support for genetic algorithms, in addition to backprop
  */
 
 using System;
@@ -370,8 +357,6 @@ public static class NetUtils {
     public static void Backward(Network net, float[] target) {
         UnityEngine.Profiling.Profiler.BeginSample("Backward");
             
-        
-
         net.Layers[net.Layers.Count-1].BackwardFinal(net.Layers[net.Layers.Count - 2], target);
 
         for (int l = net.Layers.Count-2; l > 0; l--) {
