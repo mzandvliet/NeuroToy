@@ -166,17 +166,10 @@ public class JobTest : MonoBehaviour {
         for (int i = 0; i < _batch.Length; i++) {
             int lbl = Mnist.Train.Labels[_batch[i]];
 
-            var copyInputJob = new CopySubsetJob();
-            copyInputJob.From = Mnist.Train.Images;
-            copyInputJob.To = _inputs;
-            copyInputJob.Length = Mnist.Train.ImgDims;
-            copyInputJob.FromStart = _batch[i] * Mnist.Train.ImgDims;
-            copyInputJob.ToStart = 0;
-            handle = copyInputJob.Schedule();
-
+            handle = ScheduleCopyInput(_inputs, Mnist.Train, _batch[i], handle);
             handle = ScheduleForwardPass(_net, _inputs, handle);
 
-            LabelToOneHot(lbl, _targetOutputs); // Todo: job
+            ClassToOneHot(lbl, _targetOutputs); // Todo: job
             handle = ScheduleBackwardsPass(_net, _gradients, _inputs, _targetOutputs, handle);
             handle = ScheduleAddGradients(_gradients, _gradientsAvg, handle);
             handle.Complete();
@@ -203,24 +196,15 @@ public class JobTest : MonoBehaviour {
     private void Test() {
         UnityEngine.Profiling.Profiler.BeginSample("Test");
 
-        NativeArray<float> input = new NativeArray<float>(Mnist.Test.ImgDims, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-
         int correctTestLabels = 0;
         for (int i = 0; i < Mnist.Test.NumImgs; i++) { 
             int lbl = Mnist.Test.Labels[i];
 
-            var copyInputJob = new CopySubsetJob();
-            copyInputJob.From = Mnist.Test.Images;
-            copyInputJob.To = input;
-            copyInputJob.FromStart = i * Mnist.Test.ImgDims;
-            copyInputJob.Length = Mnist.Test.ImgDims;
-            copyInputJob.ToStart = 0;
-            var handle = copyInputJob.Schedule();
-
-            handle = ScheduleForwardPass(_net, input, handle);
+            var handle = ScheduleCopyInput(_inputs, Mnist.Test, i);
+            handle = ScheduleForwardPass(_net, _inputs, handle);
             handle.Complete();
 
-            int predictedLbl = GetMaxOutput(_net.Last.Outputs);
+            int predictedLbl = ArgMax(_net.Last.Outputs);
             if (predictedLbl == lbl) {
                 correctTestLabels++;
             }
@@ -228,8 +212,6 @@ public class JobTest : MonoBehaviour {
 
         float accuracy = correctTestLabels / (float)Mnist.Test.NumImgs;
         Debug.Log("Test Accuracy: " + System.Math.Round(accuracy * 100f, 4) + "%");
-
-        input.Dispose();
 
         UnityEngine.Profiling.Profiler.EndSample();
     }
@@ -253,13 +235,13 @@ public class JobTest : MonoBehaviour {
         }
     }
 
-    private static void LabelToOneHot(int label, NativeArray<float> vector) {
+    private static void ClassToOneHot(int c, NativeArray<float> vector) {
         for (int i = 0; i < vector.Length; i++) {
-            vector[i] = i == label ? 1f : 0f;
+            vector[i] = i == c ? 1f : 0f;
         }
     }
 
-    private static int GetMaxOutput(NativeArray<float> data) {
+    private static int ArgMax(NativeArray<float> data) {
         float largestActivation = float.MinValue;
         int idx = 0;
         for (int i = 0; i < data.Length; i++) {
@@ -279,7 +261,17 @@ public class JobTest : MonoBehaviour {
         return Unity.Mathematics.math.sqrt(sum);
     }
 
-    private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input, JobHandle handle) {
+    private static JobHandle ScheduleCopyInput(NativeArray<float> inputs, New.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
+        var copyInputJob = new CopySubsetJob();
+        copyInputJob.From = set.Images;
+        copyInputJob.To = inputs;
+        copyInputJob.Length = set.ImgDims;
+        copyInputJob.FromStart = imgIdx * set.ImgDims;
+        copyInputJob.ToStart = 0;
+        return copyInputJob.Schedule(handle);
+    }
+
+    private static JobHandle ScheduleForwardPass(NativeNetwork net, NativeArray<float> input, JobHandle handle = new JobHandle()) {
         NativeArray<float> last = input;
 
         for (int l = 0; l < net.Layers.Length; l++) {
@@ -306,7 +298,7 @@ public class JobTest : MonoBehaviour {
         return handle;
     }
 
-    private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle) {
+    private static JobHandle ScheduleBackwardsPass(NativeNetwork net, NativeGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle = new JobHandle()) {
         JobHandle h = handle;
 
         var subtractJob = new SubtractJob();
@@ -339,7 +331,7 @@ public class JobTest : MonoBehaviour {
         return h;
     }
 
-    private static JobHandle ScheduleZeroGradients(NativeGradients gradients, JobHandle handle) {
+    private static JobHandle ScheduleZeroGradients(NativeGradients gradients, JobHandle handle = new JobHandle()) {
         // Todo: parallelize over layers and/or biases/weights
         for (int l = 0; l < gradients.Layers.Length; l++) {
             var setBiasJob = new SetValueJob();
@@ -356,7 +348,7 @@ public class JobTest : MonoBehaviour {
         return handle;
     }
 
-    private static JobHandle ScheduleAddGradients(NativeGradients from, NativeGradients to, JobHandle handle) {
+    private static JobHandle ScheduleAddGradients(NativeGradients from, NativeGradients to, JobHandle handle = new JobHandle()) {
         // Todo: parallelize over layers and/or biases/weights
         for (int l = 0; l < from.Layers.Length; l++) {
             var addBiasJob = new AddEqualsJob();
@@ -373,7 +365,7 @@ public class JobTest : MonoBehaviour {
         return handle;
     }
 
-    private static JobHandle ScheduleUpdateParameters(NativeNetwork net, NativeGradients gradients, float rate, JobHandle handle) {
+    private static JobHandle ScheduleUpdateParameters(NativeNetwork net, NativeGradients gradients, float rate, JobHandle handle = new JobHandle()) {
         // Todo: Find a nice way to fold the multiply by learning rate and addition together in one pass over the data
         // Also, parallelize over all the arrays
 
