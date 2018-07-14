@@ -37,6 +37,14 @@ namespace NeuralJobs {
         public static float SigmoidPrime(float sigmoidX) {
             return sigmoidX * (1f - sigmoidX);
         }
+
+        public static float ReLU(float x) {
+            return max(x, 0f);
+        }
+
+        public static float ReLUPrime(float reluX) {
+            return reluX > 0f ? 1f : 0f;
+        }
     }
 
     [BurstCompile]
