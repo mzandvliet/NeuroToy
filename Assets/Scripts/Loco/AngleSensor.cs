@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-using Old;
+using NNClassic;
 
 // Senses angle to goal
 public class AngleSensor : MonoBehaviour, ISensor {

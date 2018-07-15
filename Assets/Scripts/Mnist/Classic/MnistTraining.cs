@@ -1,7 +1,7 @@
 ﻿using System;
 using Unity.Collections;
 using UnityEngine;
-using Mnist = Old.Mnist;
+using Mnist = NNClassic.Mnist;
 
 /* 
 Todo:

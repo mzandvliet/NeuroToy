@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-using Old;
+using NNClassic;
 
 /* 
  * Derivate useful set of basis quaterions from the joint limits

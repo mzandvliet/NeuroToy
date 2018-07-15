@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace Old {
+namespace NNClassic {
     public static class Utils {
         public const float Timestep = 0.016f;
         public const float Pi = 3.14159265359f;
