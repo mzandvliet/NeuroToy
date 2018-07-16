@@ -2,7 +2,7 @@
 using UnityEngine;
 
 /* Todo:
- * Find ever better ways for the neural nets to interact with the joints
+ * Find better ways for the neural nets to interact with the joints
  * 
  * Calculate difference between target rotation and current rotation
  * Look at cases where they can converge, where they diverge
@@ -10,7 +10,7 @@ using UnityEngine;
  * I could use quaternions at the extremes, at the limits, to measure distance to.
  */
 
-public class QuaternionTets : MonoBehaviour {
+public class QuaternionExperiment : MonoBehaviour {
     [SerializeField] private ConfigurableJoint _joint;
 
     private Transform _transform;
