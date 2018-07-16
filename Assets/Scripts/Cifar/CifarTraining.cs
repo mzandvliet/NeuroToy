@@ -80,7 +80,8 @@ namespace NNBurst {
 
             var config = new NativeNetworkConfig();
             config.Layers.Add(new NativeLayerConfig { Neurons = DataManager.Train.ImgDims * 3 });
-            config.Layers.Add(new NativeLayerConfig { Neurons = 50 });
+            config.Layers.Add(new NativeLayerConfig { Neurons = 40 });
+            config.Layers.Add(new NativeLayerConfig { Neurons = 20 });
             config.Layers.Add(new NativeLayerConfig { Neurons = 10 });
 
             _net = new NativeNetwork(config);
@@ -100,6 +101,8 @@ namespace NNBurst {
             _lbl = DataManager.Train.Labels[testImgIdx];
             _img = new Texture2D(32, 32, TextureFormat.ARGB32, false, true);
             DataManager.ToTexture(DataManager.Train, testImgIdx, _img);
+
+            Test();
         }
 
         private void Update() {

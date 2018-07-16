@@ -92,6 +92,8 @@ namespace NNBurst {
             _inputs = new NativeArray<float>(DataManager.Test.ImgDims, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             _watch = System.Diagnostics.Stopwatch.StartNew();
+
+            Test();
         }
 
         private void Update() {
