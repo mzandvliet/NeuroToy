@@ -96,7 +96,7 @@ namespace NNBurst {
 
             _watch = System.Diagnostics.Stopwatch.StartNew();
 
-            int testImgIdx = 4;
+            int testImgIdx = 48392;
             _lbl = DataManager.Train.Labels[testImgIdx];
             _img = new Texture2D(32, 32, TextureFormat.ARGB32, false, true);
             DataManager.ToTexture(DataManager.Train, testImgIdx, _img);
@@ -127,7 +127,7 @@ namespace NNBurst {
             GUILayout.BeginVertical(GUI.skin.box);
             {
                 GUILayout.Label("Epoch: " + _epochCount);
-                GUILayout.Label("Batch: " + _batchCount);
+                GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.Train.Labels.Length / BatchSize));
                 GUILayout.Label("Train Loss: " + _trainingLoss);
                 GUILayout.Label("Rate: " + _rate);
             }

@@ -119,7 +119,7 @@ namespace NNBurst {
             GUILayout.BeginVertical(GUI.skin.box);
             {
                 GUILayout.Label("Epoch: " + _epochCount);
-                GUILayout.Label("Batch: " + _batchCount);
+                GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.Train.Labels.Length / BatchSize));
                 GUILayout.Label("Train Loss: " + _trainingLoss);
                 GUILayout.Label("Rate: " + _rate);
             }

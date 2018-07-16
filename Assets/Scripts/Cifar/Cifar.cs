@@ -54,10 +54,11 @@ namespace NNBurst.Cifar {
 
     public static class DataManager {
         private const string Folder = "./Datasets/Cifar/cifar-10-batches-bin";
-        private const string TrainImagePath = "data_batch_1.bin"; // Todo: 2,3,4,5
+        private const string TrainImagePathPrefix = "data_batch_"; // 1 2,3,4,5 .bin
+        private const string TrainImagePathPostfix = ".bin";
         private const string TestImagePath = "test_batch.bin";
 
-        const int NumImgs = 10000;
+        const int NumImgsPerFile = 10000;
         const int Rows = 32;
         const int Cols = 32;
         const int Channnels = 3;
@@ -68,8 +69,14 @@ namespace NNBurst.Cifar {
         
 
         public static void Load() {
-            Train = Load(TrainImagePath);
-            Test = Load(TestImagePath);
+            Train = new Dataset(NumImgsPerFile * 5, Rows, Cols);
+            for (int i = 0; i < 5; i++) {
+                string path = TrainImagePathPrefix + (i+1) + TrainImagePathPostfix;
+                Load(path, Train, i * NumImgsPerFile);
+            }
+
+            Test = new Dataset(NumImgsPerFile, Rows, Cols);
+            Load(TestImagePath, Test, 0);
         }
 
         public static void Unload() {
@@ -78,20 +85,18 @@ namespace NNBurst.Cifar {
             Test.Dispose();
         }
 
-        private static Dataset Load(string imgPath) {
-            var imgReader = new BinaryReader(new FileStream(Path.Combine(Folder, imgPath), FileMode.Open)); // BigEndian
+        private static void Load(string imgPath, Dataset set, int imgOffset) {
+            var imgReader = new BinaryReader(new FileStream(Path.Combine(Folder, imgPath), FileMode.Open));
 
-            Debug.Log("CIFAR-10: Loading " + imgPath + ", Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
-
-            var set = new Dataset(NumImgs, Rows, Cols);
+            Debug.Log("CIFAR-10: Loading " + imgPath);
 
             // Todo: storing colors in interleaved way probably makes our lives easier
 
-            for (int i = 0; i < NumImgs; i++) {
+            for (int i = 0; i < NumImgsPerFile; i++) {
                 byte lbl = imgReader.ReadByte();
-                set.Labels[i] = (Label)lbl;
+                set.Labels[imgOffset + i] = (Label)lbl;
 
-                int imgStart = (i * Channnels * ImgDims);
+                int imgStart = ((imgOffset + i) * Channnels * ImgDims);
                 for (int c = 0; c < Channnels; c++) {
                     int colStart = c * ImgDims;
                     for (int p = 0; p < ImgDims; p++) {
@@ -100,8 +105,6 @@ namespace NNBurst.Cifar {
                     }
                 }
             }
-
-            return set;
         }
 
         public static void GetBatch(NativeArray<int> batch, Dataset set, System.Random r) {
