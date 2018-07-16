@@ -3,9 +3,9 @@ using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
 
-namespace NNBurst.Mnist {
+namespace NNBurst.Cifar {
     public struct Dataset : System.IDisposable {
-        public NativeArray<int> Labels;
+        public NativeArray<Label> Labels;
         public NativeArray<float> Images;
         public List<int> Indices;
 
@@ -26,8 +26,8 @@ namespace NNBurst.Mnist {
         }
 
         public Dataset(int count, int rows, int cols) {
-            Labels = new NativeArray<int>(count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            Images = new NativeArray<float>(count * rows * cols, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Labels = new NativeArray<Label>(count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Images = new NativeArray<float>(count * rows * cols * 3, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             Indices = new List<int>(count);
             Rows = rows;
             Cols = cols;
@@ -39,19 +39,37 @@ namespace NNBurst.Mnist {
         }
     }
 
+    public enum Label : byte {
+        Airplane,
+        Automobile,
+        Bird,
+        Cat,
+        Deer,
+        Dog,
+        Frog,
+        Horse,
+        Ship,
+        Truck
+    }
+
     public static class DataManager {
-        private const string Folder = "./Datasets/Mnist";
-        private const string TrainImagePath = "train-images.idx3-ubyte";
-        private const string TrainLabelPath = "train-labels.idx1-ubyte";
-        private const string TestImagePath = "t10k-images.idx3-ubyte";
-        private const string TestLabelPath = "t10k-labels.idx1-ubyte";
+        private const string Folder = "./Datasets/Cifar/cifar-10-batches-bin";
+        private const string TrainImagePath = "data_batch_1.bin"; // Todo: 2,3,4,5
+        private const string TestImagePath = "test_batch.bin";
+
+        const int NumImgs = 10000;
+        const int Rows = 32;
+        const int Cols = 32;
+        const int Channnels = 3;
+        const int ImgDims = Rows * Cols;
 
         public static Dataset Train;
         public static Dataset Test;
+        
 
         public static void Load() {
-            Train = Load(TrainImagePath, TrainLabelPath);
-            Test = Load(TestImagePath, TestLabelPath);
+            Train = Load(TrainImagePath);
+            Test = Load(TestImagePath);
         }
 
         public static void Unload() {
@@ -60,32 +78,26 @@ namespace NNBurst.Mnist {
             Test.Dispose();
         }
 
-        private static Dataset Load(string imgPath, string lblPath) {
-            var lblReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, lblPath), FileMode.Open));
-            var imgReader = new BigEndianBinaryReader(new FileStream(Path.Combine(Folder, imgPath), FileMode.Open));
+        private static Dataset Load(string imgPath) {
+            var imgReader = new BinaryReader(new FileStream(Path.Combine(Folder, imgPath), FileMode.Open)); // BigEndian
 
-            lblReader.ReadInt32();
-            lblReader.ReadInt32();
-
-            int magicNum = imgReader.ReadInt32();
-            int NumImgs = imgReader.ReadInt32();
-            int Rows = imgReader.ReadInt32();
-            int Cols = imgReader.ReadInt32();
-            int ImgDims = Rows * Cols;
-
-            Debug.Log("MNIST: Loading " + imgPath + ", Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
+            Debug.Log("CIFAR-10: Loading " + imgPath + ", Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
 
             var set = new Dataset(NumImgs, Rows, Cols);
 
-            for (int i = 0; i < NumImgs; i++) {
-                byte lbl = lblReader.ReadByte();
-                set.Labels[i] = (int)lbl;
-            }
+            // Todo: storing colors in interleaved way probably makes our lives easier
 
             for (int i = 0; i < NumImgs; i++) {
-                for (int j = 0; j < ImgDims; j++) {
-                    byte pix = imgReader.ReadByte();
-                    set.Images[i * ImgDims + j] = pix / 256f;
+                byte lbl = imgReader.ReadByte();
+                set.Labels[i] = (Label)lbl;
+
+                int imgStart = (i * Channnels * ImgDims);
+                for (int c = 0; c < Channnels; c++) {
+                    int colStart = c * ImgDims;
+                    for (int p = 0; p < ImgDims; p++) {
+                        byte val = imgReader.ReadByte();
+                        set.Images[imgStart + colStart + p] = val / 256f;
+                    }
                 }
             }
 
@@ -127,11 +139,18 @@ namespace NNBurst.Mnist {
         public static void ToTexture(Dataset set, int imgIndex, Texture2D tex) {
             var colors = new Color[set.ImgDims];
 
+            int imgStart = imgIndex * set.ImgDims * 3;
+
             for (int y = 0; y < set.Cols; y++) {
                 for (int x = 0; x < set.Rows; x++) {
-                    float pix = set.Images[imgIndex * set.ImgDims + y * set.Cols + x];
+                    int p = y * set.Cols + x;
+                    
+                    float r = set.Images[imgStart + 1024 * 0 + p];
+                    float g = set.Images[imgStart + 1024 * 1 + p];
+                    float b = set.Images[imgStart + 1024 * 2 + p];
+
                     // Invert y
-                    colors[(set.Cols - 1 - y) * set.Cols + x] = new Color(pix, pix, pix, 1f);
+                    colors[(set.Cols - 1 - y) * set.Cols + x] = new Color(r, g, b, 1f);
                 }
             }
 

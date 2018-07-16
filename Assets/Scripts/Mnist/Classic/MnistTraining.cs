@@ -1,7 +1,7 @@
 ﻿using System;
 using Unity.Collections;
 using UnityEngine;
-using Mnist = NNClassic.Mnist;
+using NNClassic.Mnist;
 
 /* 
 Todo:
@@ -37,13 +37,13 @@ public class MnistTraining : MonoBehaviour {
         Application.runInBackground = true;
         _random = new System.Random();
 
-        Mnist.Load();
+        DataManager.Load();
 
-        _tex = new Texture2D(Mnist.Train.Rows, Mnist.Train.Cols, TextureFormat.ARGB32, false, true); // Lol
+        _tex = new Texture2D(DataManager.Train.Rows, DataManager.Train.Cols, TextureFormat.ARGB32, false, true); // Lol
         _tex.filterMode = FilterMode.Point;
 
         var def = new NetDefinition(
-            Mnist.Train.ImgDims,
+            DataManager.Train.ImgDims,
             new LayerDefinition(30, LayerType.Deterministic, ActivationType.Sigmoid),
             new LayerDefinition(10, LayerType.Deterministic, ActivationType.Sigmoid));
         _net = NetBuilder.Build(def);
@@ -98,15 +98,15 @@ public class MnistTraining : MonoBehaviour {
         int correctTrainLabels = 0;
 
         ZeroGradients(_gradientBucket);
-        var trainBatch = Mnist.GetBatch(batchSize, Mnist.Train, _random);
+        var trainBatch = DataManager.GetBatch(batchSize, DataManager.Train, _random);
         for (int i = 0; i < trainBatch.Indices.Length; i++) {
-            int lbl = Mnist.Train.Labels[trainBatch.Indices[i]];
+            int lbl = DataManager.Train.Labels[trainBatch.Indices[i]];
 
             // Copy image to input layer (Todo: this is a waste of time/memory)
             UnityEngine.Profiling.Profiler.BeginSample("CopyInputs");
             
-            for (int p = 0; p < Mnist.Train.ImgDims; p++) {
-                _net.Input[p] = Mnist.Train.Images[trainBatch.Indices[i], p];
+            for (int p = 0; p < DataManager.Train.ImgDims; p++) {
+                _net.Input[p] = DataManager.Train.Images[trainBatch.Indices[i], p];
             }
                 
             UnityEngine.Profiling.Profiler.EndSample();
@@ -156,8 +156,8 @@ public class MnistTraining : MonoBehaviour {
         UnityEngine.Profiling.Profiler.BeginSample("Test");
             
         int correctTestLabels = 0;
-        for (int i = 0; i < Mnist.Test.NumImgs; i++) {
-            int lbl = Mnist.Test.Labels[i];
+        for (int i = 0; i < DataManager.Test.NumImgs; i++) {
+            int lbl = DataManager.Test.Labels[i];
 
             CopyInputs(_net, i);
 
@@ -169,15 +169,15 @@ public class MnistTraining : MonoBehaviour {
             }
         }
 
-        float accuracy = correctTestLabels / (float)Mnist.Test.NumImgs;
+        float accuracy = correctTestLabels / (float)DataManager.Test.NumImgs;
         Debug.Log("Test Accuracy: " + Math.Round(accuracy * 100f, 4) + "%");
             
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
     private static void CopyInputs(Network net, int imgIdx) {
-        for (int p = 0; p < Mnist.Test.ImgDims; p++) {
-            net.Input[p] = Mnist.Test.Images[imgIdx, p];
+        for (int p = 0; p < DataManager.Test.ImgDims; p++) {
+            net.Input[p] = DataManager.Test.Images[imgIdx, p];
         }
     }
 

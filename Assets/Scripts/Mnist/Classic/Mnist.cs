@@ -3,7 +3,7 @@ using System.Text;
 using UnityEngine;
 using System.Collections.Generic;
 
-namespace NNClassic {
+namespace NNClassic.Mnist {
     public struct Dataset {
         public int[] Labels;
         public float[,] Images;
@@ -34,7 +34,7 @@ namespace NNClassic {
         }
     }
 
-    public static class Mnist {
+    public static class DataManager {
         private const string Folder = "./Datasets/Mnist";
         private const string TrainImagePath = "train-images.idx3-ubyte";
         private const string TrainLabelPath = "train-labels.idx1-ubyte";
