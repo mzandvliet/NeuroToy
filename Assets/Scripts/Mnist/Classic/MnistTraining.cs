@@ -3,21 +3,6 @@ using Unity.Collections;
 using UnityEngine;
 using NNClassic.Mnist;
 
-/* 
-Todo:
-- Fix fundamental problems, get the computation correct
-    - Same amount of iterations, same numerical computations as baselines should result in ~same accuracy
-- Better training progress logging (graph of average cost per batch)
-- Code refactoring:
-    - Separation of data structures needed for forward and backward evaluation; for training and use
-    - vector/matrix notation
-    - ...and a library that computes those efficiently
-
-- One perceived problem right now is that randomly initialized networks don't seem
-to correspond to uniform distribution over the output classes. I suspect this
-has to do with suboptimal initialization strategy. Try Xavier or other.
- */
-
 public class MnistTraining : MonoBehaviour {
     private Texture2D _tex;
     private int _label;
