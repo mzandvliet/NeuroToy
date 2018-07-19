@@ -15,6 +15,8 @@ namespace NNBurst {
         }
     }
 
+    #region MLP
+
     public struct NativeLayerConfig {
         public int Neurons;
     }
@@ -122,4 +124,19 @@ namespace NNBurst {
             DCDO.Dispose();
         }
     }
+
+    #endregion
+
+    #region Convolution
+
+    /* Convnet design todo:
+    - Specifying the amount of dimensions (1D, 2D, 3D...)
+    - Although at first we could just go with 2D hardcoded
+     */
+
+    public class ConvolutionLayer {
+        public NativeArray<float> Kernel; // Could use NativeSlice to segregate kernel parts. Saves address juggling.
+    }
+
+    #endregion
 }
