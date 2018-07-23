@@ -36,26 +36,15 @@ namespace Analysis {
         }
 
         public static void InverseTransform(List<NativeArray<float2>> spectra, NativeArray<float> output, int windowSize, int sr) {
-            var window = new NativeArray<float>(windowSize, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-
-            // Todo: this could write directly to signal for now.
-
             for (int i = 0; i < spectra.Count; i++) {
-                Clear(window);
                 var job = new InverseTransformWindowJob();
-                job.OutReal = window;
+                job.OutReal = output;
                 job.InSpectrum = spectra[i];
-                // job.WindowStart = i * windowSize;
-                // job.WindowSize = windowSize;
+                job.WindowStart = i * windowSize;
+                job.WindowSize = windowSize;
                 var h = job.Schedule();
                 h.Complete();
-
-                for (int j = 0; j < window.Length; j++) {
-                    output[i * windowSize + j] = window[j];
-                }
             }
-
-            window.Dispose();
         }
 
         [BurstCompile]
@@ -67,6 +56,9 @@ namespace Analysis {
             [ReadOnly] public int Samplerate;
 
             public void Execute() {
+                if (WindowSize == 0) {
+                    throw new System.ArgumentException("Window Size cannot be zero");
+                }
                 if (OutSpectrum.Length > Samplerate / 2) {
                     throw new System.ArgumentException(string.Format("Amount of frequency bins, {0}, cannot exceed Nyquist limit, {1}/2={2}", OutSpectrum.Length, Samplerate, Samplerate/2));
                 }
@@ -106,12 +98,13 @@ namespace Analysis {
         public struct InverseTransformWindowJob : IJob {
             [ReadOnly] public NativeArray<float2> InSpectrum;
             public NativeArray<float> OutReal;
+            [ReadOnly] public int WindowStart;
+            [ReadOnly] public int WindowSize;
 
             public void Execute() {
-                // int sr = signal.Length; // BUG: This can't be right????
-                // if (freqBins > sr / 2) {
-                //     throw new System.ArgumentException("Amount of frequency bins cannot exceed Nyquist limit");
-                // }
+                if (WindowSize == 0) {
+                    throw new System.ArgumentException("Window Size cannot be zero");
+                }
 
                 for (int k = 0; k < InSpectrum.Length; k++) {
                     // float freq = k;
@@ -126,11 +119,11 @@ namespace Analysis {
                     //     phase = Complex2f.Mul(phase, rotor);
                     // }
 
-                    float step = Complex2f.Tau * k / OutReal.Length;
-                    for (int s = 0; s < OutReal.Length; s++) {
+                    float step = Complex2f.Tau * k / WindowSize;
+                    for (int s = 0; s < WindowSize; s++) {
                         float2 v = new float2(
-                            OutReal[s] += math.cos(step * s) * InSpectrum[k].x,
-                            OutReal[s] += math.sin(step * s) * InSpectrum[k].y
+                            OutReal[WindowStart + s] += math.cos(step * s) * InSpectrum[k].x,
+                            OutReal[WindowStart + s] += math.sin(step * s) * InSpectrum[k].y
 
                             //OutImag[WindowStart + s] += math.sin(step * s) * InSpectrum[k].x,
                             //OutImag[WindowStart + s] += math.cos(step * s) * InSpectrum[k].y,
