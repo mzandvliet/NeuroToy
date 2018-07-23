@@ -22,17 +22,40 @@ Todo: Rewrite using Burst jobs and Unity Mathematics
 namespace Analysis {
     public static class Fourier {
         public static void Transform(NativeArray<float> input, List<NativeArray<float2>> spectra, int windowSize, int sr) {
-            for (int i = 0; i < spectra.Count; i++) { // spectra.Count
+            for (int i = 0; i < spectra.Count; i++) {
                 var job = new TransformWindowJob();
                 job.InReal = input;
+                job.OutSpectrum = spectra[i];
                 job.WindowStart = i * windowSize;
                 job.WindowSize = windowSize;
-                job.OutSpectrum = spectra[i];
                 job.Samplerate = sr;
                 var h = job.Schedule();
 
                 h.Complete();
             }
+        }
+
+        public static void InverseTransform(List<NativeArray<float2>> spectra, NativeArray<float> output, int windowSize, int sr) {
+            var window = new NativeArray<float>(windowSize, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+
+            // Todo: this could write directly to signal for now.
+
+            for (int i = 0; i < spectra.Count; i++) {
+                Clear(window);
+                var job = new InverseTransformWindowJob();
+                job.OutReal = window;
+                job.InSpectrum = spectra[i];
+                // job.WindowStart = i * windowSize;
+                // job.WindowSize = windowSize;
+                var h = job.Schedule();
+                h.Complete();
+
+                for (int j = 0; j < window.Length; j++) {
+                    output[i * windowSize + j] = window[j];
+                }
+            }
+
+            window.Dispose();
         }
 
         [BurstCompile]
@@ -65,7 +88,7 @@ namespace Analysis {
                     //     phase = Complex2f.Mul(phase, rotor);
                     // }
 
-                    float step = -2.0f * Mathf.PI * k / WindowSize;
+                    float step = -Complex2f.Tau * k / WindowSize;
                     for (int s = 0; s < WindowSize; s++) {
                         float2 v = new float2(
                             InReal[WindowStart + s] * math.cos(step * s), // + InImag * math.sin(step * s)
@@ -73,41 +96,16 @@ namespace Analysis {
                         );
                         OutSpectrum[k] += v;
                     }
-                }
 
-                for (int k = 0; k < OutSpectrum.Length; k++) {
                     OutSpectrum[k] /= OutSpectrum.Length;
                 }
             }
-        }
-
-        public static void InverseTransform(List<NativeArray<float2>> spectra, NativeArray<float> output, int windowSize, int sr) {
-            var window = new NativeArray<float>(windowSize, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-
-            // Todo: this could write directly to signal for now.
-
-            for (int i = 0; i < spectra.Count; i++) { // spectra.Count
-                Clear(window);
-                var job = new InverseTransformWindowJob();
-                job.OutReal = window;
-                job.InSpectrum = spectra[i];
-                var h = job.Schedule();
-                h.Complete();
-
-                for (int j = 0; j < window.Length; j++) {
-                    output[i * windowSize + j] = window[j];
-                }
-            }
-
-            window.Dispose();
         }
 
         [BurstCompile]
         public struct InverseTransformWindowJob : IJob {
             [ReadOnly] public NativeArray<float2> InSpectrum;
             public NativeArray<float> OutReal;
-            [ReadOnly] public int WindowStart;
-            [ReadOnly] public int WindowSize;
 
             public void Execute() {
                 // int sr = signal.Length; // BUG: This can't be right????
@@ -128,11 +126,11 @@ namespace Analysis {
                     //     phase = Complex2f.Mul(phase, rotor);
                     // }
 
-                    float step = 2.0f * Mathf.PI * k / WindowSize;
-                    for (int s = 0; s < WindowSize; s++) {
+                    float step = Complex2f.Tau * k / OutReal.Length;
+                    for (int s = 0; s < OutReal.Length; s++) {
                         float2 v = new float2(
-                            OutReal[WindowStart + s] += math.cos(step * s) * InSpectrum[k].x,
-                            OutReal[WindowStart + s] += math.sin(step * s) * InSpectrum[k].y
+                            OutReal[s] += math.cos(step * s) * InSpectrum[k].x,
+                            OutReal[s] += math.sin(step * s) * InSpectrum[k].y
 
                             //OutImag[WindowStart + s] += math.sin(step * s) * InSpectrum[k].x,
                             //OutImag[WindowStart + s] += math.cos(step * s) * InSpectrum[k].y,
@@ -232,6 +230,35 @@ namespace Analysis {
             }
             spectra.Clear();
             return spectra;
+        }
+
+        public static void DrawSignal(NativeArray<float> signal, float xScale, float yScale) {
+            // for (int i = 0; i < signal.Length; i++) {
+            //     Gizmos.DrawRay(
+            //         new Vector3(i * xScale, 0f, 2f),
+            //         new Vector3(0f, signal[i] * yScale, 0f));
+            // }
+            for (int i = 1; i < signal.Length; i++) {
+                Gizmos.DrawLine(
+                    new Vector3((i - 1) * xScale, signal[i - 1] * yScale, 2f),
+                    new Vector3(i * xScale, signal[i] * yScale, 2f));
+            }
+        }
+
+        public static void DrawSpectrum(NativeArray<float2> spectrum, float xScale, float yScale) {
+            for (int i = 0; i < spectrum.Length; i++) {
+                Gizmos.color = Color.blue;
+                Gizmos.DrawRay(
+                    new Vector3(i * xScale + 0.01f, 0f, 0f),
+                    Vector3.forward * math.length(spectrum[i]) * yScale);
+
+                Gizmos.color = Color.red;
+                Gizmos.DrawRay(
+                    new Vector3(i * xScale, 0f, 0f),
+                    new Vector3(0f, spectrum[i].x * yScale, spectrum[i].y * yScale));
+
+                Gizmos.DrawSphere(new Vector3(i * xScale, spectrum[i].x * yScale, spectrum[i].y * yScale), 0.01f);
+            }
         }
     }
 }

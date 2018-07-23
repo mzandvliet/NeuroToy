@@ -105,9 +105,9 @@ public class FourierBasics : MonoBehaviour {
             samples[i] = math.sin(
                 Complex2f.Tau * phaseOffset +
                 Complex2f.Tau * freq * phase) * amp;
-            // samples[i] += math.sin(
-            //     Complex2f.Tau * phaseOffset +
-            //     Complex2f.Tau * freq * 2f * phase) * amp / 2f;
+            samples[i] += math.sin(
+                Complex2f.Tau * phaseOffset +
+                Complex2f.Tau * freq * 2f * phase) * amp / 2f;
         }
     }
 
@@ -125,8 +125,8 @@ public class FourierBasics : MonoBehaviour {
         var ift = new Analysis.Fourier.InverseTransformWindowJob();
         ift.InSpectrum = _spectrum;
         ift.OutReal = output;
-        ift.WindowSize = output.Length;
-        ift.WindowStart = 0;
+        // ift.WindowSize = output.Length;
+        // ift.WindowStart = 0;
         h = ift.Schedule(h);
 
         h.Complete();
@@ -149,35 +149,17 @@ public class FourierBasics : MonoBehaviour {
         Gizmos.DrawRay(new Vector3(0f, 0f, 0f), Vector3.right * 100f);
 
         // Signals
+        const float signalXScale = 0.05f;
+        const float signalYScale = 1f;
         Gizmos.color = Color.white;
-        DrawSignal(_inputSignal);
+        Fourier.DrawSignal(_inputSignal, signalXScale, signalYScale);
         Gizmos.color = Color.magenta;
-        DrawSignal(_outputSignal);
+        Fourier.DrawSignal(_outputSignal, signalXScale, signalYScale);
 
         // Spectrum
-        float specXScale = 0.1f;
-        for (int i = 0; i < FreqBins; i++) {
-            Gizmos.color = Color.blue;
-            Gizmos.DrawRay(
-                new Vector3(i * specXScale + 0.01f, 0f, 0f),
-                Vector3.forward * math.length(_spectrum[i]) * _renderScale);
-
-            Gizmos.color = Color.red;
-            Gizmos.DrawRay(
-                new Vector3(i * specXScale, 0f, 0f),
-                new Vector3(0f, _spectrum[i].x * _renderScale, _spectrum[i].y * _renderScale));
-
-            Gizmos.DrawSphere(new Vector3(i * specXScale, _spectrum[i].x * _renderScale, _spectrum[i].y * _renderScale), 0.01f);
-        }
-    }
-
-    private static void DrawSignal(NativeArray<float> signal) {
-        float sigXScale = 0.05f;
-        for (int i = 0; i < signal.Length; i++) {
-            Gizmos.DrawRay(new Vector3(i * sigXScale, 0f, 2f), new Vector3(0f,  signal[i], 0f));
-        }
-        for (int i = 1; i < signal.Length; i++) {
-            Gizmos.DrawLine(new Vector3((i-1) * sigXScale, signal[i-1], 2f), new Vector3(i * sigXScale,  signal[i], 2f));
-        }
+        const float spectrumXScale = 0.05f;
+        const float spectrumYScale = 1f;
+        Fourier.DrawSpectrum(_spectrum, spectrumXScale, spectrumYScale);
+        
     }
 }
