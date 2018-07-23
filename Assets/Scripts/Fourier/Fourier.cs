@@ -218,7 +218,7 @@ namespace Analysis {
             int windows = Mathf.FloorToInt(signalLength / windowSize); // Todo: last fractional window!
             var spectra = new List<NativeArray<float2>>();
             for (int i = 0; i < windows; i++) {
-                var spectrum = new NativeArray<float2>(freqResolution, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                var spectrum = new NativeArray<float2>(freqResolution, Allocator.Persistent, NativeArrayOptions.ClearMemory);
                 spectra.Add(spectrum);
             }
             return spectra;

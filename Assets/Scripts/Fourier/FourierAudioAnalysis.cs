@@ -9,12 +9,11 @@ using Fourier = Analysis.Fourier;
 
 /*
  * Todo:
+ * - investigate massive signal spike at end of transformed signal
+ * - STFT with overlapping windows
  *
  * Performance
- * - Without thread sync, while this works, the drawn spectrum is changed at random times while rendering it, causing visual discontinuity
- * - With naive locking we hold up the audio thread unnecessarily.
- * - Use producer/consumer system without locking
- * - Use job system and compute shaders
+ * - Further jobbification
  * - FFT (radix2 or decimation in time)
  * 
  * - Store results as an image or a mesh, so we can see many consecutive frames
@@ -24,8 +23,8 @@ public class FourierAudioAnalysis : MonoBehaviour {
     [SerializeField] private AudioSource _source;
     [SerializeField] private float _renderScale = 1f;
 
-    private const int WindowSize = 2048;
-    private const int FreqBins = 1024;
+    private const int WindowSize = 512;
+    private const int FreqBins = 256;
     private int _sr;
 
     private NativeArray<float> _input;
@@ -44,8 +43,8 @@ public class FourierAudioAnalysis : MonoBehaviour {
         var clip = _source.clip;
         var samples = new float[clip.samples];
         clip.GetData(samples, 0);
-        _input = new NativeArray<float>(samples.Length / clip.channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        _output = new NativeArray<float>(samples.Length / clip.channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        _input = new NativeArray<float>(samples.Length / clip.channels, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        _output = new NativeArray<float>(samples.Length / clip.channels, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         Fourier.CopyChannel(samples, _input, clip.channels, 0);
 
         _spectra = Fourier.Allocate(_input.Length, WindowSize, FreqBins);
@@ -90,7 +89,7 @@ public class FourierAudioAnalysis : MonoBehaviour {
         }
 
         const float xScale = 0.002f;
-        const float yScale = 100f;
+        const float yScale = 50f;
         Gizmos.color = Color.white;
         Fourier.DrawSignal(_input, xScale, yScale);
         Gizmos.color = Color.magenta;

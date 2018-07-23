@@ -160,6 +160,5 @@ public class FourierBasics : MonoBehaviour {
         const float spectrumXScale = 0.05f;
         const float spectrumYScale = 1f;
         Fourier.DrawSpectrum(_spectrum, spectrumXScale, spectrumYScale);
-        
     }
 }
