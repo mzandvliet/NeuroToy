@@ -85,19 +85,22 @@ public class FourierBasics : MonoBehaviour {
     private void DoTransform(NativeArray<float> input, NativeArray<float> output) {
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
-        var ft= new Analysis.Fourier.FTJob();
+        // var ft = new Analysis.Fourier.FTJob();
+        // var ift = new Analysis.Fourier.IFTJob();
+        var ift = new Analysis.Fourier.IFTComplexJob();
+        var ft = new Analysis.Fourier.FTComplexJob();
+
         ft.InReal = input;
         ft.OutSpectrum = _spectrum;
         ft.Samplerate = _sr;
         ft.WindowSize = input.Length;
         ft.WindowStart = 0;
         var h = ft.Schedule();
-
-        var ift = new Analysis.Fourier.IFTJob();
+        
         ift.InSpectrum = _spectrum;
         ift.OutReal = output;
-        // ift.WindowSize = output.Length;
-        // ift.WindowStart = 0;
+        ift.WindowSize = output.Length;
+        ift.WindowStart = 0;
         h = ift.Schedule(h);
 
         h.Complete();
