@@ -21,41 +21,36 @@ Todo: Rewrite using Burst jobs and Unity Mathematics
 
 namespace Analysis {
     public static class Fourier {
-        public static void Transform(NativeArray<float> signal, List<NativeArray<float2>> spectra, int windowSize, int sr) {
-            var window = new NativeArray<float>(signal.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-
+        public static void Transform(NativeArray<float> input, List<NativeArray<float2>> spectra, int windowSize, int sr) {
             for (int i = 0; i < spectra.Count; i++) { // spectra.Count
                 var job = new TransformWindowJob();
-                job.signal = window;
-                job.windowStart = i * windowSize;
-                job.windowSize = windowSize;
-                job.spectrum = spectra[i];
-                job.sr = sr;
+                job.InReal = input;
+                job.WindowStart = i * windowSize;
+                job.WindowSize = windowSize;
+                job.OutSpectrum = spectra[i];
+                job.Samplerate = sr;
                 var h = job.Schedule();
+
                 h.Complete();
             }
-
-            window.Dispose();
         }
 
         [BurstCompile]
         public struct TransformWindowJob : IJob {
-            [ReadOnly] public NativeArray<float> signal;
-            [ReadOnly] public int windowStart;
-            [ReadOnly] public int windowSize;
-            public NativeArray<float2> spectrum;
-            public int sr;
+            [ReadOnly] public NativeArray<float> InReal;
+            public NativeArray<float2> OutSpectrum;
+            [ReadOnly] public int WindowStart;
+            [ReadOnly] public int WindowSize;
+            [ReadOnly] public int Samplerate;
 
             public void Execute() {
-                if (spectrum.Length > sr / 2) {
-                    throw new System.ArgumentException("Amount of frequency bins cannot exceed Nyquist limit");
+                if (OutSpectrum.Length > Samplerate / 2) {
+                    throw new System.ArgumentException(string.Format("Amount of frequency bins, {0}, cannot exceed Nyquist limit, {1}/2={2}", OutSpectrum.Length, Samplerate, Samplerate/2));
                 }
 
-                for (int k = 0; k < spectrum.Length; k++) {
-                    spectrum[k] = new float2();
-                }
+                for (int k = 0; k < OutSpectrum.Length; k++) {
+                    OutSpectrum[k] = new float2();
 
-                for (int k = 0; k < spectrum.Length; k++) {
                     float freq = k;
                     //Debug.Log("k: " + k + ", freq: " + freq);
 
@@ -70,31 +65,37 @@ namespace Analysis {
                     //     phase = Complex2f.Mul(phase, rotor);
                     // }
 
-                    float step = -2.0f * Mathf.PI * k / windowSize;
-                    for (int s = 0; s < windowSize; s++) {
+                    float step = -2.0f * Mathf.PI * k / WindowSize;
+                    for (int s = 0; s < WindowSize; s++) {
                         float2 v = new float2(
-                            signal[windowStart + s] * math.cos(step * s),
-                            signal[windowStart + s] * math.sin(step * s)
+                            InReal[WindowStart + s] * math.cos(step * s), // + InImag * math.sin(step * s)
+                            InReal[WindowStart + s] * math.sin(step * s) // + InImag * math.cos(step * s)
                         );
-                        spectrum[k] += v;
+                        OutSpectrum[k] += v;
                     }
+                }
+
+                for (int k = 0; k < OutSpectrum.Length; k++) {
+                    OutSpectrum[k] /= OutSpectrum.Length;
                 }
             }
         }
 
-        public static void InverseTransform(List<NativeArray<float2>> spectra, NativeArray<float> signal, int windowSize, int sr) {
+        public static void InverseTransform(List<NativeArray<float2>> spectra, NativeArray<float> output, int windowSize, int sr) {
             var window = new NativeArray<float>(windowSize, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+
+            // Todo: this could write directly to signal for now.
 
             for (int i = 0; i < spectra.Count; i++) { // spectra.Count
                 Clear(window);
                 var job = new InverseTransformWindowJob();
-                job.signal = window;
-                job.spectrum = spectra[i];
+                job.OutReal = window;
+                job.InSpectrum = spectra[i];
                 var h = job.Schedule();
                 h.Complete();
 
                 for (int j = 0; j < window.Length; j++) {
-                    signal[i * windowSize + j] = window[j];
+                    output[i * windowSize + j] = window[j];
                 }
             }
 
@@ -103,10 +104,10 @@ namespace Analysis {
 
         [BurstCompile]
         public struct InverseTransformWindowJob : IJob {
-            [ReadOnly] public NativeArray<float2> spectrum;
-            public NativeArray<float> signal;
-            [ReadOnly] public int windowStart;
-            [ReadOnly] public int windowSize;
+            [ReadOnly] public NativeArray<float2> InSpectrum;
+            public NativeArray<float> OutReal;
+            [ReadOnly] public int WindowStart;
+            [ReadOnly] public int WindowSize;
 
             public void Execute() {
                 // int sr = signal.Length; // BUG: This can't be right????
@@ -114,7 +115,7 @@ namespace Analysis {
                 //     throw new System.ArgumentException("Amount of frequency bins cannot exceed Nyquist limit");
                 // }
 
-                for (int k = 0; k < spectrum.Length; k++) {
+                for (int k = 0; k < InSpectrum.Length; k++) {
                     // float freq = k;
                     // float phaseStep = Complex2f.Tau * freq / sr;
                     // var rotor = new float2(
@@ -127,22 +128,21 @@ namespace Analysis {
                     //     phase = Complex2f.Mul(phase, rotor);
                     // }
 
-                    float step = 2.0f * Mathf.PI * k / windowSize;
-                    for (int s = 0; s < windowSize; s++) {
+                    float step = 2.0f * Mathf.PI * k / WindowSize;
+                    for (int s = 0; s < WindowSize; s++) {
                         float2 v = new float2(
-                            signal[windowStart + s] += math.cos(step * s) * spectrum[k].x,
-                            signal[windowStart + s] += math.sin(step * s) * spectrum[k].y
+                            OutReal[WindowStart + s] += math.cos(step * s) * InSpectrum[k].x,
+                            OutReal[WindowStart + s] += math.sin(step * s) * InSpectrum[k].y
+
+                            //OutImag[WindowStart + s] += math.sin(step * s) * InSpectrum[k].x,
+                            //OutImag[WindowStart + s] += math.cos(step * s) * InSpectrum[k].y,
                         );
                     }
-                }
-
-                for (int s = 0; s < signal.Length; s++) {
-                    signal[s] /= signal.Length;
                 }
             }
         }
 
-        // Todo: Can also store all windows of a signal in a nativearray
+        // Todo: Can also store all windows of a signal in a nativearray, use slicing
         public static void Filter(List<NativeArray<float2>> spectrum) {
             int freqResolution = spectrum[0].Length;
             int halfFreqRes = freqResolution / 2;
@@ -205,6 +205,12 @@ namespace Analysis {
         }
 
         public static void Clear(NativeArray<float> buffer) {
+            for (int i = 0; i < buffer.Length; i++) {
+                buffer[i] = 0f;
+            }
+        }
+
+        public static void Clear(float[] buffer) {
             for (int i = 0; i < buffer.Length; i++) {
                 buffer[i] = 0f;
             }
