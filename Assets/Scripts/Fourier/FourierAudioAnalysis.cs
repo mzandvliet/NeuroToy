@@ -9,7 +9,9 @@ using Fourier = Analysis.Fourier;
 
 /*
  * Todo:
- * - investigate massive signal spike at end of transformed signal
+ * - Investigate difference in quality between current transcendental and complex versions
+ *      - Transcendental has very noticable discontinuities at window borders
+ *      - Somehow, complex version does not have these. Why?
  * - STFT with overlapping windows
  *
  * Performance

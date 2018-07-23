@@ -23,7 +23,8 @@ namespace Analysis {
     public static class Fourier {
         public static void Transform(NativeArray<float> input, List<NativeArray<float2>> spectra, int windowSize, int sr) {
             for (int i = 0; i < spectra.Count; i++) {
-                var job = new TransformWindowJob();
+                var job = new FTComplexJob();
+                // var job = new FTJob();
                 job.InReal = input;
                 job.OutSpectrum = spectra[i];
                 job.WindowStart = i * windowSize;
@@ -37,7 +38,8 @@ namespace Analysis {
 
         public static void InverseTransform(List<NativeArray<float2>> spectra, NativeArray<float> output, int windowSize, int sr) {
             for (int i = 0; i < spectra.Count; i++) {
-                var job = new InverseTransformWindowJob();
+                var job = new IFTComplexJob();
+                // var job = new IFTJob();
                 job.OutReal = output;
                 job.InSpectrum = spectra[i];
                 job.WindowStart = i * windowSize;
@@ -48,7 +50,7 @@ namespace Analysis {
         }
 
         [BurstCompile]
-        public struct TransformWindowJob : IJob {
+        public struct FTJob : IJob {
             [ReadOnly] public NativeArray<float> InReal;
             public NativeArray<float2> OutSpectrum;
             [ReadOnly] public int WindowStart;
@@ -64,22 +66,10 @@ namespace Analysis {
                 }
 
                 for (int k = 0; k < OutSpectrum.Length; k++) {
+                    // Zero result first
                     OutSpectrum[k] = new float2();
 
-                    float freq = k;
-                    //Debug.Log("k: " + k + ", freq: " + freq);
-
-                    // float phaseStep = -Complex2f.Tau * freq / sr;
-                    // float2 rotor = new float2(
-                    //     math.cos(phaseStep),
-                    //     math.sin(phaseStep));
-                    // float2 phase = new float2(1f, 0f);
-
-                    // for (int s = 0; s < windowSize; s++) {
-                    //     spectrum[k] += Complex2f.Mul(new float2(signal[windowStart + s], 0f), phase);
-                    //     phase = Complex2f.Mul(phase, rotor);
-                    // }
-
+                    // Transform using transcendentals
                     float step = -Complex2f.Tau * k / WindowSize;
                     for (int s = 0; s < WindowSize; s++) {
                         float2 v = new float2(
@@ -89,13 +79,51 @@ namespace Analysis {
                         OutSpectrum[k] += v;
                     }
 
+                    // Normalize
                     OutSpectrum[k] /= OutSpectrum.Length;
                 }
             }
         }
 
         [BurstCompile]
-        public struct InverseTransformWindowJob : IJob {
+        public struct FTComplexJob : IJob {
+            [ReadOnly] public NativeArray<float> InReal;
+            public NativeArray<float2> OutSpectrum;
+            [ReadOnly] public int WindowStart;
+            [ReadOnly] public int WindowSize;
+            [ReadOnly] public int Samplerate;
+
+            public void Execute() {
+                if (WindowSize == 0) {
+                    throw new System.ArgumentException("Window Size cannot be zero");
+                }
+                if (OutSpectrum.Length > Samplerate / 2) {
+                    throw new System.ArgumentException(string.Format("Amount of frequency bins, {0}, cannot exceed Nyquist limit, {1}/2={2}", OutSpectrum.Length, Samplerate, Samplerate / 2));
+                }
+
+                for (int k = 0; k < OutSpectrum.Length; k++) {
+                    // Zero result first
+                    OutSpectrum[k] = new float2();
+
+                    // Tranform using complex oscillators
+                    float step = -Complex2f.Tau * k / WindowSize;
+                    float2 rotor = new float2(
+                        math.cos(step),
+                        math.sin(step));
+                    float2 phase = new float2(1f, 0f);
+                    for (int s = 0; s < WindowSize; s++) {
+                        OutSpectrum[k] += Complex2f.Mul(new float2(InReal[WindowStart + s], 0f), phase);
+                        phase = Complex2f.Mul(phase, rotor);
+                    }
+
+                    // Normalize
+                    OutSpectrum[k] /= OutSpectrum.Length;
+                }
+            }
+        }
+
+        [BurstCompile]
+        public struct IFTJob : IJob {
             [ReadOnly] public NativeArray<float2> InSpectrum;
             public NativeArray<float> OutReal;
             [ReadOnly] public int WindowStart;
@@ -106,34 +134,44 @@ namespace Analysis {
                     throw new System.ArgumentException("Window Size cannot be zero");
                 }
 
+                // Transform using transcendentals
                 for (int k = 0; k < InSpectrum.Length; k++) {
-                    // float freq = k;
-                    // float phaseStep = Complex2f.Tau * freq / sr;
-                    // var rotor = new float2(
-                    //     math.cos(phaseStep),
-                    //     math.sin(phaseStep));
-                    // var phase = new float2(1f, 0f);
-
-                    // for (int s = 0; s < sr; s++) {
-                    //     signal[s] += Complex2f.Mul(spectrum[k], phase).x;
-                    //     phase = Complex2f.Mul(phase, rotor);
-                    // }
-
                     float step = Complex2f.Tau * k / WindowSize;
                     for (int s = 0; s < WindowSize; s++) {
-                        float2 v = new float2(
-                            OutReal[WindowStart + s] += math.cos(step * s) * InSpectrum[k].x,
-                            OutReal[WindowStart + s] += math.sin(step * s) * InSpectrum[k].y
-
-                            //OutImag[WindowStart + s] += math.sin(step * s) * InSpectrum[k].x,
-                            //OutImag[WindowStart + s] += math.cos(step * s) * InSpectrum[k].y,
-                        );
+                        OutReal[WindowStart + s] += math.cos(step * s) * InSpectrum[k].x;
+                        OutReal[WindowStart + s] += math.sin(step * s) * InSpectrum[k].y;
                     }
                 }
             }
         }
 
-        // Todo: Can also store all windows of a signal in a nativearray, use slicing
+        [BurstCompile]
+        public struct IFTComplexJob : IJob {
+            [ReadOnly] public NativeArray<float2> InSpectrum;
+            public NativeArray<float> OutReal;
+            [ReadOnly] public int WindowStart;
+            [ReadOnly] public int WindowSize;
+
+            public void Execute() {
+                if (WindowSize == 0) {
+                    throw new System.ArgumentException("Window Size cannot be zero");
+                }
+
+                // Tranform using complex oscillators
+                for (int k = 0; k < InSpectrum.Length; k++) {
+                    float phaseStep = Complex2f.Tau * k / WindowSize;
+                    var rotor = new float2(
+                        math.cos(phaseStep),
+                        math.sin(phaseStep));
+                    var phase = new float2(1f, 0f);
+                    for (int s = 0; s < WindowSize; s++) {
+                        OutReal[WindowStart + s] += Complex2f.Mul(InSpectrum[k], phase).x;
+                        phase = Complex2f.Mul(phase, rotor);
+                    }
+                }
+            }
+        }
+
         public static void Filter(List<NativeArray<float2>> spectrum) {
             int freqResolution = spectrum[0].Length;
             int halfFreqRes = freqResolution / 2;
@@ -207,8 +245,9 @@ namespace Analysis {
             }
         }
 
+        // Todo: Can also store all windows of a signal in a nativearray, use slicing
         public static List<NativeArray<float2>> Allocate(int signalLength, int windowSize, int freqResolution) {
-            int windows = Mathf.FloorToInt(signalLength / windowSize); // Todo: last fractional window!
+            int windows = Mathf.CeilToInt(signalLength / windowSize);
             var spectra = new List<NativeArray<float2>>();
             for (int i = 0; i < windows; i++) {
                 var spectrum = new NativeArray<float2>(freqResolution, Allocator.Persistent, NativeArrayOptions.ClearMemory);

@@ -4,35 +4,6 @@ using Unity.Collections;
 using Fourier = Analysis.Fourier;
 using Unity.Jobs;
 
-/*
-    Todo:
-    This basic example is still not correct. FIX.
-    The reconstructed signal, for fractional frequency values, has DC offset
-    and phase issues. For n.5f freqs, we get a gaussian distribution for
-    amplitudes in frequency space, centered around the two nearest buckets.
-    Looking along the imaginary axis, we see a kind of 1/x pattern, switching
-    polarity around the frequency center. Sample[0] reconstruction is no longer
-    zero, but has DC offset. In fact, the whole signal is DC offset at these
-    fractional frequency values.
-
-    Get thoroughly familiar with frequency space arithmetic
-    Study why forward transform rotates one way, not the other
-    Play around with additive synthesis, fm
-    Write tests, proofs, so you can rely on your code
-
-    We previously had an interesting non-linear distribution of basis vectors.
-    Reason about what it was, and what kind of effects that had. It's funny
-    that I never bothered to check what the actual frequencies were that I
-    was tuning the basis vectors to, they were way off from what it should have
-    been. It says I either need to make that stuff way easier to inspect, or
-    work in an environment where it is much eachier to check on all these things
-    as you compute.
-
-    So, say... Mathematica. Where all these experiments I do for study would go
-    at lightspeedd compared to what I'm doing now. In Unity I know how to go fast
-    and to do all sorts of custom graphics and simulation. But that's not what
-    I need for these quests of understanding.
- */
 public class FourierBasics : MonoBehaviour {
     [SerializeField] private float _renderScale = 1f;
     [SerializeField] private AudioSource _source;
@@ -114,7 +85,7 @@ public class FourierBasics : MonoBehaviour {
     private void DoTransform(NativeArray<float> input, NativeArray<float> output) {
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
-        var ft= new Analysis.Fourier.TransformWindowJob();
+        var ft= new Analysis.Fourier.FTJob();
         ft.InReal = input;
         ft.OutSpectrum = _spectrum;
         ft.Samplerate = _sr;
@@ -122,7 +93,7 @@ public class FourierBasics : MonoBehaviour {
         ft.WindowStart = 0;
         var h = ft.Schedule();
 
-        var ift = new Analysis.Fourier.InverseTransformWindowJob();
+        var ift = new Analysis.Fourier.IFTJob();
         ift.InSpectrum = _spectrum;
         ift.OutReal = output;
         // ift.WindowSize = output.Length;
