@@ -73,22 +73,21 @@ public class FourierBasics : MonoBehaviour {
     private static void GenerateSignal(NativeArray<float> samples, float freq, float phaseOffset, float amp, int sr) {
         for (int i = 0; i < samples.Length; i++) {
             float phase = (i / (float)(sr));
-            samples[i] = math.sin(
-                Complex2f.Tau * phaseOffset +
-                Complex2f.Tau * freq * phase) * amp;
-            samples[i] += math.sin(
-                Complex2f.Tau * phaseOffset +
-                Complex2f.Tau * freq * 2f * phase) * amp / 2f;
+            for (float octave = 1f; octave < 5f; octave +=1f) {
+                samples[i] += math.sin(
+                    Complex2f.Tau * phaseOffset +
+                    Complex2f.Tau * (freq * octave) * phase) * (amp / octave);
+            }
         }
     }
 
     private void DoTransform(NativeArray<float> input, NativeArray<float> output) {
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
-        // var ft = new Analysis.Fourier.FTJob();
-        // var ift = new Analysis.Fourier.IFTJob();
-        var ift = new Analysis.Fourier.IFTComplexJob();
-        var ft = new Analysis.Fourier.FTComplexJob();
+        var ft = new Analysis.Fourier.FTJob();
+        var ift = new Analysis.Fourier.IFTJob();
+        // var ift = new Analysis.Fourier.IFTComplexJob();
+        // var ft = new Analysis.Fourier.FTComplexJob();
 
         ft.InReal = input;
         ft.OutSpectrum = _spectrum;
@@ -126,13 +125,13 @@ public class FourierBasics : MonoBehaviour {
         const float signalXScale = 0.05f;
         const float signalYScale = 1f;
         Gizmos.color = Color.white;
-        Fourier.DrawSignal(_inputSignal, signalXScale, signalYScale);
+        Fourier.DrawSignal(_inputSignal, Vector3.forward, signalXScale, signalYScale);
         Gizmos.color = Color.magenta;
-        Fourier.DrawSignal(_outputSignal, signalXScale, signalYScale);
+        Fourier.DrawSignal(_outputSignal, Vector3.zero, signalXScale, signalYScale);
 
         // Spectrum
         const float spectrumXScale = 0.05f;
         const float spectrumYScale = 1f;
-        Fourier.DrawSpectrum(_spectrum, spectrumXScale, spectrumYScale);
+        Fourier.DrawSpectrum(_spectrum, Vector3.zero, spectrumXScale, spectrumYScale);
     }
 }

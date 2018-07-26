@@ -23,8 +23,8 @@ namespace Analysis {
     public static class Fourier {
         public static void Transform(NativeArray<float> input, List<NativeArray<float2>> spectra, int windowSize, int sr) {
             for (int i = 0; i < spectra.Count; i++) {
-                var job = new FTComplexJob();
-                // var job = new FTJob();
+                // var job = new FTComplexJob();
+                var job = new FTJob();
                 job.InReal = input;
                 job.OutSpectrum = spectra[i];
                 job.WindowStart = i * windowSize;
@@ -38,8 +38,8 @@ namespace Analysis {
 
         public static void InverseTransform(List<NativeArray<float2>> spectra, NativeArray<float> output, int windowSize, int sr) {
             for (int i = 0; i < spectra.Count; i++) {
-                var job = new IFTComplexJob();
-                // var job = new IFTJob();
+                // var job = new IFTComplexJob();
+                var job = new IFTJob();
                 job.OutReal = output;
                 job.InSpectrum = spectra[i];
                 job.WindowStart = i * windowSize;
@@ -48,6 +48,8 @@ namespace Analysis {
                 h.Complete();
             }
         }
+
+        
 
         [BurstCompile]
         public struct FTJob : IJob {
@@ -159,10 +161,10 @@ namespace Analysis {
 
                 // Tranform using complex oscillators
                 for (int k = 0; k < InSpectrum.Length; k++) {
-                    float phaseStep = Complex2f.Tau * k / WindowSize;
+                    float step = Complex2f.Tau * k / WindowSize;
                     var rotor = new float2(
-                        math.cos(phaseStep),
-                        math.sin(phaseStep));
+                        math.cos(step),
+                        math.sin(step));
                     var phase = new float2(1f, 0f);
                     for (int s = 0; s < WindowSize; s++) {
                         OutReal[WindowStart + s] += Complex2f.Mul(InSpectrum[k], phase).x;
@@ -173,9 +175,6 @@ namespace Analysis {
         }
 
         public static void Filter(List<NativeArray<float2>> spectrum) {
-            int freqResolution = spectrum[0].Length;
-            int halfFreqRes = freqResolution / 2;
-
             for (int w = 0; w < spectrum.Count; w++) {
                 Filter(spectrum[w]);
             }
@@ -183,7 +182,7 @@ namespace Analysis {
 
         public static void Filter(NativeArray<float2> spectrum) {
             for (int i = 0; i < spectrum.Length; i++) {
-                spectrum[i] *= 2f;
+                spectrum[i] *= i < spectrum.Length / 8 ? 1f : 0f;
             }
         }
 
@@ -264,32 +263,27 @@ namespace Analysis {
             return spectra;
         }
 
-        public static void DrawSignal(NativeArray<float> signal, float xScale, float yScale) {
-            // for (int i = 0; i < signal.Length; i++) {
-            //     Gizmos.DrawRay(
-            //         new Vector3(i * xScale, 0f, 2f),
-            //         new Vector3(0f, signal[i] * yScale, 0f));
-            // }
+        public static void DrawSignal(NativeArray<float> signal, Vector3 offset, float xScale, float yScale) {
             for (int i = 1; i < signal.Length; i++) {
                 Gizmos.DrawLine(
-                    new Vector3((i - 1) * xScale, signal[i - 1] * yScale, 2f),
-                    new Vector3(i * xScale, signal[i] * yScale, 2f));
+                    offset + new Vector3((i - 1) * xScale, signal[i - 1] * yScale, 2f),
+                    offset + new Vector3(i * xScale, signal[i] * yScale, 2f));
             }
         }
 
-        public static void DrawSpectrum(NativeArray<float2> spectrum, float xScale, float yScale) {
+        public static void DrawSpectrum(NativeArray<float2> spectrum, Vector3 offset, float xScale, float yScale) {
             for (int i = 0; i < spectrum.Length; i++) {
                 Gizmos.color = Color.blue;
                 Gizmos.DrawRay(
-                    new Vector3(i * xScale + 0.01f, 0f, 0f),
+                    offset + new Vector3(i * xScale + 0.01f, 0f, 0f),
                     Vector3.forward * math.length(spectrum[i]) * yScale);
 
                 Gizmos.color = Color.red;
                 Gizmos.DrawRay(
-                    new Vector3(i * xScale, 0f, 0f),
+                    offset + new Vector3(i * xScale, 0f, 0f),
                     new Vector3(0f, spectrum[i].x * yScale, spectrum[i].y * yScale));
 
-                Gizmos.DrawSphere(new Vector3(i * xScale, spectrum[i].x * yScale, spectrum[i].y * yScale), 0.01f);
+                Gizmos.DrawSphere(offset + new Vector3(i * xScale, spectrum[i].x * yScale, spectrum[i].y * yScale), 0.01f);
             }
         }
     }

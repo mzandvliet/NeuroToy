@@ -12,6 +12,7 @@ using Fourier = Analysis.Fourier;
  * - Investigate difference in quality between current transcendental and complex versions
  *      - Transcendental has very noticable discontinuities at window borders
  *      - Somehow, complex version does not have these. Why?
+ *      - Has to do with sign of step value
  * - STFT with overlapping windows
  *
  * Performance
@@ -52,6 +53,7 @@ public class FourierAudioAnalysis : MonoBehaviour {
         _spectra = Fourier.Allocate(_input.Length, WindowSize, FreqBins);
         var watch = Stopwatch.StartNew();
         Fourier.Transform(_input, _spectra, WindowSize, _sr);
+        //Fourier.Filter(_spectra);
         Fourier.InverseTransform(_spectra, _output, WindowSize, _sr);
         watch.Stop();
         Debug.Log("FT+IFT millis:" + watch.ElapsedMilliseconds);
@@ -93,13 +95,13 @@ public class FourierAudioAnalysis : MonoBehaviour {
         const float xScale = 0.002f;
         const float yScale = 50f;
         Gizmos.color = Color.white;
-        Fourier.DrawSignal(_input, xScale, yScale);
+        Fourier.DrawSignal(_input, Vector3.forward, xScale, yScale);
         Gizmos.color = Color.magenta;
-        Fourier.DrawSignal(_output, xScale, yScale);
+        Fourier.DrawSignal(_output, Vector3.zero, xScale, yScale);
 
         const float spectrumXScale = 0.05f;
         const float spectrumYScale = 1f;
-        Fourier.DrawSpectrum(_spectra[_spectra.Count/2], spectrumXScale, spectrumYScale);
+        Fourier.DrawSpectrum(_spectra[_spectra.Count/2], Vector3.zero, spectrumXScale, spectrumYScale);
     }
 
     private void OnGUI() {
