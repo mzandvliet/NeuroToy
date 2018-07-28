@@ -2,6 +2,7 @@
 using System.Threading;
 using UnityEngine;
 using Random = System.Random;
+using NNClassic;
 
 /*
  * Todo: Restore genepool notion

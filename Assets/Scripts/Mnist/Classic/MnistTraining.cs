@@ -1,7 +1,8 @@
 ﻿using System;
 using Unity.Collections;
 using UnityEngine;
-using NNClassic.Mnist;
+using NNClassic;
+using DataManager = NNClassic.Mnist.DataManager;
 
 public class MnistTraining : MonoBehaviour {
     private Texture2D _tex;
