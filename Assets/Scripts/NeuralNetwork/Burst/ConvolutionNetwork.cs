@@ -8,12 +8,13 @@ namespace NNBurst {
         [ReadOnly] public NativeArray<float> input;
         [ReadOnly] public NativeArray<float> kernel;
         [WriteOnly] public NativeArray<float> output;
+        [ReadOnly] public int stride;
 
         // Todo: experiment with native slice architectures
 
         public void Execute() {
-            for (int x = 0; x < 26; x++) {
-                for (int y = 0; y < 26; y++) {
+            for (int x = 0; x < 26; x+=stride) {
+                for (int y = 0; y < 26; y+=stride) {
                     int imgX = x+1;
                     int imgY = y+1;
 

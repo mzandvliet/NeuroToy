@@ -33,6 +33,7 @@ public class ConvTest : MonoBehaviour {
         cj.input = img;
         cj.output = act;
         cj.kernel = kernel;
+        cj.stride = stride;
         handle = cj.Schedule(handle);
 
         handle.Complete();
