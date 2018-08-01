@@ -1,32 +1,58 @@
 using Unity.Burst;
 using Unity.Jobs;
 using Unity.Collections;
+using System;
 
 namespace NNBurst {
+    public struct Kernel2D : System.IDisposable {
+        public int Size;
+        public int Channels;
+        public int Stride;
+
+        public NativeArray<float> Values;
+
+        public Kernel2D(int dims, int channels, int stride) {
+            Size = dims;
+            Channels = channels;
+            Stride = stride;
+            Values = new NativeArray<float>(dims * dims * channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public void Dispose() {
+            Values.Dispose();
+        }
+    }
+
     [BurstCompile]
     public struct Conv2DJob : IJob {
         [ReadOnly] public NativeArray<float> input;
-        [ReadOnly] public NativeArray<float> kernel;
         [WriteOnly] public NativeArray<float> output;
-        [ReadOnly] public int stride;
+        [ReadOnly] public Kernel2D k;
 
-        // Todo: experiment with native slice architectures
+        // Todo: experiment with native slice
 
         public void Execute() {
-            for (int x = 0; x < 26; x+=stride) {
-                for (int y = 0; y < 26; y+=stride) {
-                    int imgX = x+1;
-                    int imgY = y+1;
+            const int inDim = 28;
+            const int outDim = inDim - 2; // Todo: derive from imgdim, kSize, kStride
+            int kHalf = k.Size / 2;
 
-                    float act = 0f;
-                    // act = input[imgY * 28 + imgX];
+            for (int x = 0; x < outDim; x += k.Stride) {
+                for (int y = 0; y < outDim; y += k.Stride) {
+                    int imgX = x+kHalf;
+                    int imgY = y+kHalf;
+
+                    float a = 0f;
                     
-                    for (int kX = -1; kX <= 1; kX++) {
-                        for (int kY = -1; kY <= 1; kY++) {
-                            act += input[(imgY+kY) * 28 + (imgX+kX)] * kernel[3 * (1 + kY) + (1 + kX)];
+                    for (int kX = -kHalf; kX <= kHalf; kX++) {
+                        for (int kY = -kHalf; kY <= kHalf; kY++) {
+
+                            int inIdx = (imgY + kY) * inDim + (imgX + kX);
+                            int kIdx = k.Size * (kHalf + kY) + (kHalf + kX);
+
+                            a += input[inIdx] * k.Values[kIdx];
                         }
                     }
-                    output[y * 26 + x] = act;
+                    output[y * outDim + x] = a;
                 }
             }
         }
