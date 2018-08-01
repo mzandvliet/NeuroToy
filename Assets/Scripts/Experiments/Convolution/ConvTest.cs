@@ -30,15 +30,19 @@ public class ConvTest : MonoBehaviour {
     private void Awake() {
         _random = new System.Random();
 
-        // Load some images
-
         DataManager.Load();
 
         const int inDim = 28;
         const int kSize = 3;
         const int kChannels = 16;
         const int kStride = 1;
-        const int outDim = inDim - 2; // Todo: derive from imgdim, kSize, kStride
+        const int kPadding = 0;
+
+        int outDim = GetOutputSize(inDim, kSize, kStride, kPadding); // Todo: derive from imgdim, kSize, kStride
+        if (outDim == -1) {
+            Debug.LogError("Cannot perform convolution with this configuration");
+            return;
+        }
 
         var img = new NativeArray<float>(inDim * inDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         var act = new NativeArray<float>(outDim * outDim * kChannels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
@@ -58,6 +62,8 @@ public class ConvTest : MonoBehaviour {
         cj.input = img;
         cj.output = act;
         cj.k = kernel;
+        cj.inDim = inDim;
+        cj.outDim = outDim;
         handle = cj.Schedule(handle);
 
         handle.Complete();
@@ -82,6 +88,14 @@ public class ConvTest : MonoBehaviour {
         img.Dispose();
         act.Dispose();
         DataManager.Unload();
+    }
+
+    private static int GetOutputSize(int inputSize, int kernelSize, int stride, int padding) {
+        float result = (inputSize - kernelSize + padding * 2.0f) / (float)stride + 1.0f;
+        if (result - (int)result < float.Epsilon) {
+            return (int) result;
+        }
+        return -1;
     }
 
     private static Texture2D[] CreateTexture2DArray(int x, int y, int count) {

@@ -28,6 +28,8 @@ namespace NNBurst {
         [ReadOnly] public NativeArray<float> input;
         [WriteOnly] public NativeArray<float> output;
         [ReadOnly] public Kernel2D k;
+        [ReadOnly] public int inDim;
+        [ReadOnly] public int outDim;
 
         /* Todo:
          - experiment with native slice for notational clearity
@@ -35,8 +37,6 @@ namespace NNBurst {
          */
 
         public void Execute() {
-            const int inDim = 28;
-            const int outDim = inDim - 2; // Todo: derive from imgdim, kSize, kStride
             int kHalf = k.Size / 2;
 
             for (int c = 0; c < k.Channels; c++) {
