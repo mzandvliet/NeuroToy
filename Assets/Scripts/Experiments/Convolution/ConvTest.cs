@@ -21,7 +21,7 @@ Make it such that all state is easily graphable through textures on screen
 public class ConvTest : MonoBehaviour {
     private int _imgLabel;
     private Texture2D _imgTex;
-    private Texture2D _actTex;
+    private Texture2D[] _actTex;
 
     private Texture2D[] _kernelTex;
 
@@ -35,9 +35,13 @@ public class ConvTest : MonoBehaviour {
         DataManager.Load();
 
         const int inDim = 28;
+        const int kSize = 3;
+        const int kChannels = 16;
+        const int kStride = 1;
         const int outDim = inDim - 2; // Todo: derive from imgdim, kSize, kStride
+
         var img = new NativeArray<float>(inDim * inDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        var act = new NativeArray<float>(outDim * outDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        var act = new NativeArray<float>(outDim * outDim * kChannels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
         const int imgIdx = 23545;
         _imgLabel = DataManager.Train.Labels[imgIdx];
@@ -45,7 +49,7 @@ public class ConvTest : MonoBehaviour {
 
         // Create convolution kernel
 
-        var kernel = new Kernel2D(3, 16, 1);
+        var kernel = new Kernel2D(kSize, kChannels, kStride);
         NeuralMath.RandomGaussian(_random, kernel.Values, 0f, 1f);
 
         // Run convolution pass
@@ -61,16 +65,16 @@ public class ConvTest : MonoBehaviour {
         // Create debug textures
 
         _imgTex = new Texture2D(inDim, inDim, TextureFormat.ARGB32, false, true);
-        _actTex = new Texture2D(outDim, outDim, TextureFormat.ARGB32, false, true);
         _imgTex.filterMode = FilterMode.Point;
-        _actTex.filterMode = FilterMode.Point;
         ToTexture(img, _imgTex);
-        ToTexture(act, _actTex);
 
-        _kernelTex = new Texture2D[kernel.Channels];
-        for (int i = 0; i < kernel.Channels; i++) {
-            _kernelTex[i] = new Texture2D(kernel.Size, kernel.Size, TextureFormat.ARGB32, false, true);
-            _kernelTex[i].filterMode = FilterMode.Point;
+        _actTex = CreateTexture2DArray(outDim, outDim, kChannels);
+        for (int i = 0; i < kChannels; i++) {
+            ToTexture(act, i, _actTex[i]);
+        }
+
+        _kernelTex = CreateTexture2DArray(kSize, kSize, kChannels);
+        for (int i = 0; i < kChannels; i++) {
             ToTexture(kernel, i, _kernelTex[i]);
         }
 
@@ -78,6 +82,15 @@ public class ConvTest : MonoBehaviour {
         img.Dispose();
         act.Dispose();
         DataManager.Unload();
+    }
+
+    private static Texture2D[] CreateTexture2DArray(int x, int y, int count) {
+        var array = new Texture2D[count];
+        for (int i = 0; i < count; i++) {
+            array[i] = new Texture2D(x, y, TextureFormat.ARGB32, false, true);
+            array[i].filterMode = FilterMode.Point;
+        }
+        return array;
     }
 
     private static void ToTexture(NativeArray<float> img, Texture2D tex) {
@@ -95,10 +108,27 @@ public class ConvTest : MonoBehaviour {
         tex.Apply(false);
     }
 
-    private static void ToTexture(Kernel2D kernel, int idx, Texture2D tex) {
+    private static void ToTexture(NativeArray<float> act, int channel, Texture2D tex) {
+        var colors = new Color[tex.width * tex.height];
+
+        var slice = act.Slice(tex.width * tex.height * channel, tex.width * tex.height);
+
+        for (int y = 0; y < tex.height; y++) {
+            for (int x = 0; x < tex.width; x++) {
+                float pix = slice[y * tex.height + x];
+                // Invert y
+                colors[(tex.height - 1 - y) * tex.height + x] = new Color(pix, pix, pix, 1f);
+            }
+        }
+
+        tex.SetPixels(0, 0, tex.width, tex.height, colors);
+        tex.Apply(false);
+    }
+
+    private static void ToTexture(Kernel2D kernel, int channel, Texture2D tex) {
         var colors = new Color[kernel.Size * kernel.Size];
 
-        int start = kernel.Size * kernel.Size * idx;
+        int start = kernel.Size * kernel.Size * channel;
 
         for (int y = 0; y < kernel.Size; y++) {
             for (int x = 0; x < kernel.Size; x++) {
@@ -112,13 +142,34 @@ public class ConvTest : MonoBehaviour {
     }
 
     private void OnGUI() {
-        GUI.Label(new Rect(0f, 32f, 280f, 32f), "Label: " + _imgLabel);
-        GUI.DrawTexture(new Rect(0f, 64f, 280f, 280f), _imgTex, ScaleMode.ScaleToFit);
-        GUI.DrawTexture(new Rect(10f, 64f + 280f, 260f, 260f), _actTex, ScaleMode.ScaleToFit);
+        float marginX = 10f;
+        float marginY = 10f;
+        float inSize = 28f * 4f;
+        float outSize = 26f * 4f;
+        float kSize = _kernelTex[0].width * 16f;
 
-        int kTexSize = _kernelTex[0].width * 16;
+        float y = 32f;
+
+        GUI.Label(new Rect(0f, y, inSize, 32f), "Label: " + _imgLabel);
+        y += 32f + marginY;
+
+        GUI.DrawTexture(new Rect(0f, y, inSize, inSize), _imgTex, ScaleMode.ScaleToFit);
+        y += inSize + marginY;
+
         for (int i = 0; i < _kernelTex.Length; i++) {
-            GUI.DrawTexture(new Rect(10f + kTexSize * i, 64f + 280f + 260f, kTexSize, kTexSize), _kernelTex[i], ScaleMode.ScaleToFit);
+            GUI.DrawTexture(
+                new Rect(marginX + kSize * i, y, kSize, kSize),
+                _kernelTex[i],
+                ScaleMode.ScaleToFit);
+        }
+
+        y += kSize + marginY;
+
+        for (int i = 0; i < _kernelTex.Length; i++) {
+            GUI.DrawTexture(
+                new Rect(marginX + outSize * i, y, outSize, outSize),
+                _actTex[i],
+                ScaleMode.ScaleToFit);
         }
     }
 }

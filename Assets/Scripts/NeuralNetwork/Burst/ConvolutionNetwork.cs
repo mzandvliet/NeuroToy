@@ -29,30 +29,38 @@ namespace NNBurst {
         [WriteOnly] public NativeArray<float> output;
         [ReadOnly] public Kernel2D k;
 
-        // Todo: experiment with native slice
+        /* Todo:
+         - experiment with native slice for notational clearity
+         - parallelize over channels
+         */
 
         public void Execute() {
             const int inDim = 28;
             const int outDim = inDim - 2; // Todo: derive from imgdim, kSize, kStride
             int kHalf = k.Size / 2;
 
-            for (int x = 0; x < outDim; x += k.Stride) {
-                for (int y = 0; y < outDim; y += k.Stride) {
-                    int imgX = x+kHalf;
-                    int imgY = y+kHalf;
+            for (int c = 0; c < k.Channels; c++) {
+                var outC = output.Slice(outDim * outDim * c, outDim * outDim);
+                var kC = k.Values.Slice(k.Size * k.Size * c, k.Size * k.Size);
 
-                    float a = 0f;
-                    
-                    for (int kX = -kHalf; kX <= kHalf; kX++) {
-                        for (int kY = -kHalf; kY <= kHalf; kY++) {
+                for (int x = 0; x < outDim; x += k.Stride) {
+                    for (int y = 0; y < outDim; y += k.Stride) {
+                        int imgX = x + kHalf;
+                        int imgY = y + kHalf;
 
-                            int inIdx = (imgY + kY) * inDim + (imgX + kX);
-                            int kIdx = k.Size * (kHalf + kY) + (kHalf + kX);
+                        float a = 0f;
 
-                            a += input[inIdx] * k.Values[kIdx];
+                        for (int kX = -kHalf; kX <= kHalf; kX++) {
+                            for (int kY = -kHalf; kY <= kHalf; kY++) {
+
+                                int inIdx = (imgY + kY) * inDim + (imgX + kX);
+                                int kIdx = k.Size * (kHalf + kY) + (kHalf + kX);
+
+                                a += input[inIdx] * kC[kIdx];
+                            }
                         }
+                        outC[y * outDim + x] = a;
                     }
-                    output[y * outDim + x] = a;
                 }
             }
         }
