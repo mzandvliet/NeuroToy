@@ -27,39 +27,41 @@ namespace NNBurst {
     public struct Conv2DJob : IJob {
         [ReadOnly] public NativeArray<float> input;
         [WriteOnly] public NativeArray<float> output;
-        [ReadOnly] public Kernel2D k;
+        [ReadOnly] public Kernel2D kernel;
         [ReadOnly] public int inDim;
         [ReadOnly] public int outDim;
 
         /* Todo:
-         - experiment with native slice for notational clearity
+         - Padding
+         - Multiple color channels
          - parallelize over channels
          */
 
         public void Execute() {
-            int kHalf = k.Size / 2;
+            int kHalf = kernel.Size / 2;
 
-            for (int c = 0; c < k.Channels; c++) {
-                var outC = output.Slice(outDim * outDim * c, outDim * outDim);
-                var kC = k.Values.Slice(k.Size * k.Size * c, k.Size * k.Size);
+            for (int c = 0; c < kernel.Channels; c++) {
+                var o = output.Slice(outDim * outDim * c, outDim * outDim);
+                var k = kernel.Values.Slice(kernel.Size * kernel.Size * c, kernel.Size * kernel.Size);
 
-                for (int x = 0; x < outDim; x += k.Stride) {
-                    for (int y = 0; y < outDim; y += k.Stride) {
+                for (int x = 0; x < outDim; x += kernel.Stride) {
+                    for (int y = 0; y < outDim; y += kernel.Stride) {
                         int imgX = x + kHalf;
                         int imgY = y + kHalf;
 
                         float a = 0f;
-
                         for (int kX = -kHalf; kX <= kHalf; kX++) {
                             for (int kY = -kHalf; kY <= kHalf; kY++) {
 
                                 int inIdx = (imgY + kY) * inDim + (imgX + kX);
-                                int kIdx = k.Size * (kHalf + kY) + (kHalf + kX);
+                                int kIdx = kernel.Size * (kHalf + kY) + (kHalf + kX);
 
-                                a += input[inIdx] * kC[kIdx];
+                                a += input[inIdx] * k[kIdx];
                             }
                         }
-                        outC[y * outDim + x] = a;
+
+                        a = NeuralMath.ReLU(a);
+                        o[y * outDim + x] = a;
                     }
                 }
             }

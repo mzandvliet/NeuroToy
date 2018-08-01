@@ -61,7 +61,7 @@ public class ConvTest : MonoBehaviour {
         var cj = new Conv2DJob();
         cj.input = img;
         cj.output = act;
-        cj.k = kernel;
+        cj.kernel = kernel;
         cj.inDim = inDim;
         cj.outDim = outDim;
         handle = cj.Schedule(handle);

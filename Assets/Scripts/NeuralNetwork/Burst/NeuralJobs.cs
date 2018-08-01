@@ -11,8 +11,7 @@ So immediately we get to the interesting challenge of generating random numbers 
 - Basic error handling, such as when input array lengths mismatch (can be done outside of job system)
     - Check that all job inputs are set to valid state
 
-- After checking out singlethreaded performance, try writing ParallalFor variants of
-many of these functions, since most calculations are independent.
+- Try writing ParallalFor variants of many of these functions, since most calculations are independent.
 
 - Maybe we can use NativeSlice concept to flatten structures into 1d arrays
 
