@@ -158,7 +158,7 @@ public class ConvTest : MonoBehaviour {
 
         for (int i = 0; i < _kernelTex.Length; i++) {
             GUI.DrawTexture(
-                new Rect(marginX + kSize * i, y, kSize, kSize),
+                new Rect(marginX + outSize * i, y, kSize, kSize),
                 _kernelTex[i],
                 ScaleMode.ScaleToFit);
         }
