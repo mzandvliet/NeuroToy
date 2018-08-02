@@ -6,16 +6,16 @@ using System;
 namespace NNBurst {
     public struct Kernel2D : System.IDisposable {
         public int Size;
-        public int Channels;
+        public int Depth;
         public int Stride;
 
         public NativeArray<float> Values;
 
-        public Kernel2D(int dims, int channels, int stride) {
-            Size = dims;
-            Channels = channels;
+        public Kernel2D(int size, int depth, int stride) {
+            Size = size;
+            Depth = depth;
             Stride = stride;
-            Values = new NativeArray<float>(dims * dims * channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Values = new NativeArray<float>(size * size * depth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         }
 
         public void Dispose() {
@@ -40,7 +40,7 @@ namespace NNBurst {
         public void Execute() {
             int kHalf = kernel.Size / 2;
 
-            for (int c = 0; c < kernel.Channels; c++) {
+            for (int c = 0; c < kernel.Depth; c++) {
                 var o = output.Slice(outDim * outDim * c, outDim * outDim);
                 var k = kernel.Values.Slice(kernel.Size * kernel.Size * c, kernel.Size * kernel.Size);
 
