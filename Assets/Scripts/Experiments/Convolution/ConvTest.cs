@@ -31,7 +31,7 @@ public class ConvTest : MonoBehaviour {
     private System.Random _random;
     
     private void Awake() {
-        _random = new System.Random();
+        _random = new System.Random(1234);
 
         DataManager.Load();
 
@@ -41,14 +41,7 @@ public class ConvTest : MonoBehaviour {
         const int kStride = 1;
         const int kPadding = 0;
 
-        int outDim = GetOutputSize(inDim, kSize, kStride, kPadding); // Todo: derive from imgdim, kSize, kStride
-        if (outDim == -1) {
-            Debug.LogError("Cannot perform convolution with this configuration");
-            return;
-        }
-
         var img = new NativeArray<float>(inDim * inDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        var act = new NativeArray<float>(outDim * outDim * kDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
         const int imgIdx = 23545;
         _imgLabel = DataManager.Train.Labels[imgIdx];
@@ -56,17 +49,18 @@ public class ConvTest : MonoBehaviour {
 
         // Create convolution kernel
 
-        var kernel = new Kernel2D(kSize, kDepth, kStride);
-        NeuralMath.RandomGaussian(_random, kernel.Values, 0f, 1f);
+        var l = ConvLayer2D.Create(inDim, kSize, kDepth, kStride, kPadding);
+        if (l == null) {
+            return;
+        }
+        var layer = l.Value;
+        NeuralMath.RandomGaussian(_random, layer.Kernel, 0f, 1f);
 
         // Run convolution pass
 
         var cj = new Conv2DJob();
         cj.input = img;
-        cj.output = act;
-        cj.kernel = kernel;
-        cj.inDim = inDim;
-        cj.outDim = outDim;
+        cj.layer = layer;
         handle = cj.Schedule(handle);
 
         handle.Complete();
@@ -75,30 +69,21 @@ public class ConvTest : MonoBehaviour {
 
         _imgTex = new Texture2D(inDim, inDim, TextureFormat.ARGB32, false, true);
         _imgTex.filterMode = FilterMode.Point;
-        TextureUtils.ToTexture(img, _imgTex);
+        TextureUtils.ImgToTexture(img, _imgTex);
 
-        _actTex = TextureUtils.CreateTexture2DArray(outDim, outDim, kDepth);
+        _actTex = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, kDepth);
         for (int i = 0; i < kDepth; i++) {
-            TextureUtils.ToTexture(act, i, _actTex[i]);
+            TextureUtils.ActivationToTexture(layer.output, i, _actTex[i]);
         }
 
         _kernelTex = TextureUtils.CreateTexture2DArray(kSize, kSize, kDepth);
         for (int i = 0; i < kDepth; i++) {
-            TextureUtils.ToTexture(kernel, i, _kernelTex[i]);
+            TextureUtils.KernelToTexture(layer, i, _kernelTex[i]);
         }
 
-        kernel.Dispose();
+        layer.Dispose();
         img.Dispose();
-        act.Dispose();
         DataManager.Unload();
-    }
-
-    private static int GetOutputSize(int inputSize, int kSize, int kStride, int kPadding) {
-        float result = (inputSize - kSize + kPadding * 2.0f) / (float)kStride + 1.0f;
-        if (result - (int)result < float.Epsilon) {
-            return (int) result;
-        }
-        return -1;
     }
 
     private void OnGUI() {
@@ -144,7 +129,7 @@ public static class TextureUtils {
         return array;
     }
 
-    public static void ToTexture(NativeArray<float> img, Texture2D tex) {
+    public static void ImgToTexture(NativeArray<float> img, Texture2D tex) {
         var colors = new Color[img.Length];
 
         for (int y = 0; y < tex.height; y++) {
@@ -159,7 +144,7 @@ public static class TextureUtils {
         tex.Apply(false);
     }
 
-    public static void ToTexture(NativeArray<float> act, int channel, Texture2D tex) {
+    public static void ActivationToTexture(NativeArray<float> act, int channel, Texture2D tex) {
         var colors = new Color[tex.width * tex.height];
 
         var slice = act.Slice(tex.width * tex.height * channel, tex.width * tex.height);
@@ -176,15 +161,15 @@ public static class TextureUtils {
         tex.Apply(false);
     }
 
-    public static void ToTexture(Kernel2D kernel, int channel, Texture2D tex) {
-        var colors = new Color[kernel.Size * kernel.Size];
+    public static void KernelToTexture(ConvLayer2D layer, int channel, Texture2D tex) {
+        var colors = new Color[layer.Size * layer.Size];
 
-        int start = kernel.Size * kernel.Size * channel;
+        int start = layer.Size * layer.Size * channel;
 
-        for (int y = 0; y < kernel.Size; y++) {
-            for (int x = 0; x < kernel.Size; x++) {
-                float pix = kernel.Values[start + y * kernel.Size + x];
-                colors[y * kernel.Size + x] = new Color(pix, pix, pix, 1f);
+        for (int y = 0; y < layer.Size; y++) {
+            for (int x = 0; x < layer.Size; x++) {
+                float pix = layer.Kernel[start + y * layer.Size + x];
+                colors[y * layer.Size + x] = new Color(pix, pix, pix, 1f);
             }
         }
 
