@@ -1,12 +1,11 @@
 using UnityEngine;
 using Unity.Collections;
+using System.Collections.Generic;
 using Unity.Jobs;
 using DataManager = NNBurst.Mnist.DataManager;
 using NNBurst;
 
 /*
-- MNIST image y-invert in DataManager, not in user code
-
 - Stucture for a single conv layer
     - Easy creation and wiring
 
@@ -20,12 +19,12 @@ using NNBurst;
  */
 
 public class ConvTest : MonoBehaviour {
-    private ConvLayer2D[] _layers;
+    private IList<ConvLayer2D> _layers;
 
     private int _imgLabel;
     private Texture2D _imgTex;
     
-    private Conv2DLayerTexture[] _layerTex;
+    private IList<Conv2DLayerTexture> _layerTex;
 
     private System.Random _random;
     
@@ -43,28 +42,39 @@ public class ConvTest : MonoBehaviour {
 
         // Create convolution layers
 
-        _layers = new ConvLayer2D[2];
+        _layers = new List<ConvLayer2D>();
 
-        var l = ConvLayer2D.Create(imgDim, 3, 16, 1, 0);
+        var l = ConvLayer2D.Create(imgDim, 9, 16, 1, 0);
         if (l == null) {
             return;
         }
-        _layers[0] = l.Value;
+        _layers.Add(l.Value);
 
-        l = ConvLayer2D.Create(_layers[0].OutDim, 3, 8, 1, 0);
+        l = ConvLayer2D.Create(_layers[0].OutDim, 7, 16, 1, 0);
         if (l == null) {
             return;
         }
-        _layers[1] = l.Value;
+        _layers.Add(l.Value);
 
-        for (int i = 0; i < _layers.Length; i++) {
+        l = ConvLayer2D.Create(_layers[1].OutDim, 5, 16, 1, 0);
+        if (l == null) {
+            return;
+        }
+        _layers.Add(l.Value);
+        l = ConvLayer2D.Create(_layers[2].OutDim, 3, 16, 1, 0);
+        if (l == null) {
+            return;
+        }
+        _layers.Add(l.Value);
+
+        for (int i = 0; i < _layers.Count; i++) {
             NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 1f);
         }
 
         // Run convolution pass
 
         var input = img;
-        for (int i = 0; i < _layers.Length; i++) {
+        for (int i = 0; i < _layers.Count; i++) {
             var j = new Conv2DJob();
             j.input = input;
             j.layer = _layers[i];
@@ -81,14 +91,14 @@ public class ConvTest : MonoBehaviour {
         _imgTex.filterMode = FilterMode.Point;
         TextureUtils.ImgToTexture(img, _imgTex);
 
-        _layerTex = new Conv2DLayerTexture[_layers.Length];
-        for (int i = 0; i < _layers.Length; i++) {
-            _layerTex[i] = new Conv2DLayerTexture(_layers[i]);
+        _layerTex = new List<Conv2DLayerTexture>(_layers.Count);
+        for (int i = 0; i < _layers.Count; i++) {
+            _layerTex.Add(new Conv2DLayerTexture(_layers[i]));
         }
 
         // Clean up
 
-        for (int i = 0; i < _layers.Length; i++) {
+        for (int i = 0; i < _layers.Count; i++) {
             _layers[i].Dispose();
         }
         img.Dispose();
@@ -106,7 +116,7 @@ public class ConvTest : MonoBehaviour {
         GUI.DrawTexture(new Rect(GUIConfig.marginX, y, imgSize, imgSize), _imgTex, ScaleMode.ScaleToFit);
         y += imgSize + GUIConfig.marginY;
 
-        for (int i = 0; i < _layerTex.Length; i++) {
+        for (int i = 0; i < _layerTex.Count; i++) {
             DrawConv2DLayer(_layerTex[i], ref y);
         }
     }
@@ -118,7 +128,7 @@ public class ConvTest : MonoBehaviour {
 
         for (int i = 0; i < layer.Kernel.Length; i++) {
             GUI.DrawTexture(
-                new Rect(GUIConfig.marginX + outSize * i, y, kSize, kSize),
+                new Rect(GUIConfig.marginX + outSize * i + 20f, y, kSize, kSize),
                 layer.Kernel[i],
                 ScaleMode.ScaleToFit);
         }
@@ -127,7 +137,7 @@ public class ConvTest : MonoBehaviour {
 
         for (int i = 0; i < layer.Activation.Length; i++) {
             GUI.DrawTexture(
-                new Rect(GUIConfig.marginX + outSize * i, y, outSize, outSize),
+                new Rect(GUIConfig.marginX + outSize * i + 20f, y, outSize, outSize),
                 layer.Activation[i],
                 ScaleMode.ScaleToFit);
         }
@@ -138,9 +148,9 @@ public class ConvTest : MonoBehaviour {
     private static class GUIConfig {
         public const float marginX = 10f;
         public const float marginY = 10f;
-        public const float lblScaleY = 32f;
+        public const float lblScaleY = 24f;
         public const float imgScale = 3f;
-        public const float kernScale = 16f;
+        public const float kernScale = 8f;
     }
 }
 

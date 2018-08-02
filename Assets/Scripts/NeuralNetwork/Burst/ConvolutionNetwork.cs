@@ -56,6 +56,8 @@ namespace NNBurst {
         public ConvLayer2D layer;
         
         /* Todo:
+         - Consider input has depth 16, this layer has depth 8; how to convolve?
+         - Add bias
          - Padding
          - Multiple color channels
          - parallelize over depth or color channels (note: can't divvy up using NativeSlice)
@@ -74,14 +76,14 @@ namespace NNBurst {
 
                 for (int x = 0; x < outDim; x += layer.Stride) {
                     for (int y = 0; y < outDim; y += layer.Stride) {
-                        int imgX = x + kHalf;
-                        int imgY = y + kHalf;
+                        int inX = x + kHalf;
+                        int inY = y + kHalf;
 
                         float a = 0f;
                         for (int kX = -kHalf; kX <= kHalf; kX++) {
                             for (int kY = -kHalf; kY <= kHalf; kY++) {
 
-                                int inIdx = (imgY + kY) * layer.InDim + (imgX + kX);
+                                int inIdx = (inY + kY) * layer.InDim + (inX + kX);
                                 int kernIdx = layer.Size * (kHalf + kY) + (kHalf + kX);
 
                                 a += input[inIdx] * k[kernIdx];
