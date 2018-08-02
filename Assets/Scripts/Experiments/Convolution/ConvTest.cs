@@ -34,31 +34,38 @@ public class ConvTest : MonoBehaviour {
         DataManager.Load();
 
         const int inDim = 28;
-        const int kSize = 3;
-        const int kDepth = 16; // Fibre
-        const int kStride = 1;
-        const int kPadding = 0;
-
         var img = new NativeArray<float>(inDim * inDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
         const int imgIdx = 23545;
         _imgLabel = DataManager.Train.Labels[imgIdx];
         var handle = NeuralJobs.CopyInput(img, DataManager.Train, imgIdx);
 
-        // Create convolution kernel
+        // Create convolution layers
 
-        var l = ConvLayer2D.Create(inDim, kSize, kDepth, kStride, kPadding);
+        var l = ConvLayer2D.Create(inDim, 3, 16, 1, 0);
         if (l == null) {
             return;
         }
-        var layer = l.Value;
-        NeuralMath.RandomGaussian(_random, layer.Kernel, 0f, 1f);
+        var l1 = l.Value;
+
+        l = ConvLayer2D.Create(l1.OutDim, 3, 8, 1, 0);
+        if (l == null) {
+            return;
+        }
+        var l2 = l.Value;
+
+        NeuralMath.RandomGaussian(_random, l1.Kernel, 0f, 1f);
+        NeuralMath.RandomGaussian(_random, l2.Kernel, 0f, 1f);
 
         // Run convolution pass
 
         var cj = new Conv2DJob();
         cj.input = img;
-        cj.layer = layer;
+        cj.layer = l1;
+        handle = cj.Schedule(handle);
+        cj = new Conv2DJob();
+        cj.input = l1.output;
+        cj.layer = l2;
         handle = cj.Schedule(handle);
 
         handle.Complete();
@@ -69,17 +76,18 @@ public class ConvTest : MonoBehaviour {
         _imgTex.filterMode = FilterMode.Point;
         TextureUtils.ImgToTexture(img, _imgTex);
 
-        _actTex = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, kDepth);
-        for (int i = 0; i < kDepth; i++) {
-            TextureUtils.ActivationToTexture(layer.output, i, _actTex[i]);
+        _actTex = TextureUtils.CreateTexture2DArray(l1.OutDim, l1.OutDim, l1.Depth);
+        for (int i = 0; i < l1.Depth; i++) {
+            TextureUtils.ActivationToTexture(l1.output, i, _actTex[i]);
         }
 
-        _kernelTex = TextureUtils.CreateTexture2DArray(kSize, kSize, kDepth);
-        for (int i = 0; i < kDepth; i++) {
-            TextureUtils.KernelToTexture(layer, i, _kernelTex[i]);
+        _kernelTex = TextureUtils.CreateTexture2DArray(l1.Size, l1.Size, l1.Depth);
+        for (int i = 0; i < l1.Depth; i++) {
+            TextureUtils.KernelToTexture(l1, i, _kernelTex[i]);
         }
 
-        layer.Dispose();
+        l1.Dispose();
+        l2.Dispose();
         img.Dispose();
         DataManager.Unload();
     }
