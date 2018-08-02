@@ -52,10 +52,9 @@ namespace NNBurst {
 
     [BurstCompile]
     public struct Conv2DJob : IJob {
-        public ConvLayer2D layer;
         [ReadOnly] public NativeArray<float> input;
+        public ConvLayer2D layer;
         
-
         /* Todo:
          - Padding
          - Multiple color channels
@@ -83,9 +82,9 @@ namespace NNBurst {
                             for (int kY = -kHalf; kY <= kHalf; kY++) {
 
                                 int inIdx = (imgY + kY) * layer.InDim + (imgX + kX);
-                                int kIdx = layer.Size * (kHalf + kY) + (kHalf + kX);
+                                int kernIdx = layer.Size * (kHalf + kY) + (kHalf + kX);
 
-                                a += input[inIdx] * k[kIdx];
+                                a += input[inIdx] * k[kernIdx];
                             }
                         }
 

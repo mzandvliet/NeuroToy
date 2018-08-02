@@ -34,8 +34,8 @@ public class ConvTest : MonoBehaviour {
 
         DataManager.Load();
 
-        const int inDim = 28;
-        var img = new NativeArray<float>(inDim * inDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        const int imgDim = 28;
+        var img = new NativeArray<float>(imgDim * imgDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
         const int imgIdx = 23545;
         _imgLabel = DataManager.Train.Labels[imgIdx];
@@ -45,7 +45,7 @@ public class ConvTest : MonoBehaviour {
 
         _layers = new ConvLayer2D[2];
 
-        var l = ConvLayer2D.Create(inDim, 3, 16, 1, 0);
+        var l = ConvLayer2D.Create(imgDim, 3, 16, 1, 0);
         if (l == null) {
             return;
         }
@@ -77,7 +77,7 @@ public class ConvTest : MonoBehaviour {
 
         // Create debug textures
 
-        _imgTex = new Texture2D(inDim, inDim, TextureFormat.ARGB32, false, true);
+        _imgTex = new Texture2D(imgDim, imgDim, TextureFormat.ARGB32, false, true);
         _imgTex.filterMode = FilterMode.Point;
         TextureUtils.ImgToTexture(img, _imgTex);
 
@@ -96,41 +96,51 @@ public class ConvTest : MonoBehaviour {
     }
 
     private void OnGUI() {
-        var layer = _layerTex[0];
-
-        const float marginX = 10f;
-        const float marginY = 10f;
-        float lblScaleY = 32f;
-        const float imgScale = 3f;
-        const float kernScale = 16f;
-
-        float inSize = layer.Source.InDim * imgScale;
-        float outSize = layer.Source.InDim * imgScale;
-        float kSize = layer.Kernel[0].width * kernScale;
-
         float y = 32f;
-        
-        GUI.Label(new Rect(marginX, y, inSize, lblScaleY), "Label: " + _imgLabel);
-        y += lblScaleY + marginY;
 
-        GUI.DrawTexture(new Rect(marginX, y, inSize, inSize), _imgTex, ScaleMode.ScaleToFit);
-        y += inSize + marginY;
+        float imgSize = 28 * GUIConfig.imgScale;
+
+        GUI.Label(new Rect(GUIConfig.marginX, y, imgSize, GUIConfig.lblScaleY), "Label: " + _imgLabel);
+        y += GUIConfig.lblScaleY + GUIConfig.marginY;
+
+        GUI.DrawTexture(new Rect(GUIConfig.marginX, y, imgSize, imgSize), _imgTex, ScaleMode.ScaleToFit);
+        y += imgSize + GUIConfig.marginY;
+
+        for (int i = 0; i < _layerTex.Length; i++) {
+            DrawConv2DLayer(_layerTex[i], ref y);
+        }
+    }
+
+    private static void DrawConv2DLayer(Conv2DLayerTexture layer, ref float y) {
+        float inSize = layer.Source.InDim * GUIConfig.imgScale;
+        float outSize = layer.Source.InDim * GUIConfig.imgScale;
+        float kSize = layer.Kernel[0].width * GUIConfig.kernScale;
 
         for (int i = 0; i < layer.Kernel.Length; i++) {
             GUI.DrawTexture(
-                new Rect(marginX + outSize * i, y, kSize, kSize),
+                new Rect(GUIConfig.marginX + outSize * i, y, kSize, kSize),
                 layer.Kernel[i],
                 ScaleMode.ScaleToFit);
         }
 
-        y += kSize + marginY;
+        y += kSize + GUIConfig.marginY;
 
         for (int i = 0; i < layer.Activation.Length; i++) {
             GUI.DrawTexture(
-                new Rect(marginX + outSize * i, y, outSize, outSize),
+                new Rect(GUIConfig.marginX + outSize * i, y, outSize, outSize),
                 layer.Activation[i],
                 ScaleMode.ScaleToFit);
         }
+
+        y += outSize + GUIConfig.marginY;
+    }
+
+    private static class GUIConfig {
+        public const float marginX = 10f;
+        public const float marginY = 10f;
+        public const float lblScaleY = 32f;
+        public const float imgScale = 3f;
+        public const float kernScale = 16f;
     }
 }
 
