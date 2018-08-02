@@ -8,11 +8,9 @@ using NNBurst;
 - MNIST image y-invert in DataManager, not in user code
 
 - Stucture for a single conv layer
-    - Pointer to input structure
-    - Memory for kernel and activations
     - Easy creation and wiring
 
-- MaxPool
+- MaxPool? (Fallen out of favor, can get by without it for now)
 
 - Kernel with multiple color channels, too, so X*Y*C*P
 
@@ -135,8 +133,7 @@ public static class TextureUtils {
         for (int y = 0; y < tex.height; y++) {
             for (int x = 0; x < tex.width; x++) {
                 float pix = img[y * tex.height + x];
-                // Invert y
-                colors[(tex.height - 1 - y) * tex.height + x] = new Color(pix, pix, pix, 1f);
+                colors[y * tex.height + x] = new Color(pix, pix, pix, 1f);
             }
         }
 
@@ -152,8 +149,7 @@ public static class TextureUtils {
         for (int y = 0; y < tex.height; y++) {
             for (int x = 0; x < tex.width; x++) {
                 float pix = slice[y * tex.height + x];
-                // Invert y
-                colors[(tex.height - 1 - y) * tex.height + x] = new Color(pix, pix, pix, 1f);
+                colors[y * tex.height + x] = new Color(pix, pix, pix, 1f);
             }
         }
 

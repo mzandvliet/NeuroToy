@@ -34,6 +34,10 @@ namespace NNBurst {
 
         System.Diagnostics.Stopwatch _watch;
 
+        // Visual test of data
+        private int _label;
+        private Texture2D _tex;
+
         private void Awake() {
             Application.runInBackground = true;
 
@@ -58,6 +62,13 @@ namespace NNBurst {
             _inputs = new NativeArray<float>(DataManager.Test.ImgDims, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             _watch = System.Diagnostics.Stopwatch.StartNew();
+
+            // Visual test of data
+            const int testImgIdx = 18;
+            _label = DataManager.Train.Labels[testImgIdx];
+            _tex = new Texture2D(DataManager.Train.Rows, DataManager.Train.Cols, TextureFormat.ARGB32, false, true);
+            _tex.filterMode = FilterMode.Point;
+            DataManager.ToTexture(DataManager.Train, testImgIdx, _tex);
 
             Test();
         }
@@ -93,8 +104,8 @@ namespace NNBurst {
             }
             GUILayout.EndVertical();
 
-            // GUI.Label(new Rect(0f, 32f, 280f, 32f), "Label: " + _label);
-            // GUI.DrawTexture(new Rect(0f, 64f, 280f, 280f), _tex, ScaleMode.ScaleToFit);
+            GUI.Label(new Rect(0f, 128f, 280f, 32f), "Label: " + _label);
+            GUI.DrawTexture(new Rect(0f, 148f, 280f, 280f), _tex, ScaleMode.ScaleToFit);
         }
 
         private void OnDestroy() {

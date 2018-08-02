@@ -83,9 +83,12 @@ namespace NNBurst.Mnist {
             }
 
             for (int i = 0; i < NumImgs; i++) {
-                for (int j = 0; j < ImgDims; j++) {
-                    byte pix = imgReader.ReadByte();
-                    set.Images[i * ImgDims + j] = pix / 256f;
+                // Read order flips images axes to Unity style
+                for (int y = 0; y < Cols; y++) {
+                    for (int x = 0; x < Rows; x++) {
+                        byte pix = imgReader.ReadByte();
+                        set.Images[i * ImgDims + (Cols - 1 - y) * Rows + x] = pix / 256f;
+                    }
                 }
             }
 
@@ -130,8 +133,7 @@ namespace NNBurst.Mnist {
             for (int y = 0; y < set.Cols; y++) {
                 for (int x = 0; x < set.Rows; x++) {
                     float pix = set.Images[imgIndex * set.ImgDims + y * set.Cols + x];
-                    // Invert y
-                    colors[(set.Cols - 1 - y) * set.Cols + x] = new Color(pix, pix, pix, 1f);
+                    colors[y * set.Cols + x] = new Color(pix, pix, pix, 1f);
                 }
             }
 
