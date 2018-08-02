@@ -60,6 +60,8 @@ namespace NNBurst {
          - Padding
          - Multiple color channels
          - parallelize over depth or color channels (note: can't divvy up using NativeSlice)
+
+         Note: bonus of having a single array for output: super easy to hook up FC layers
          */
 
         public void Execute() {

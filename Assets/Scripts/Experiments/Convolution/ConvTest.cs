@@ -20,11 +20,12 @@ using NNBurst;
  */
 
 public class ConvTest : MonoBehaviour {
+    private ConvLayer2D[] _layers;
+
     private int _imgLabel;
     private Texture2D _imgTex;
-    private Texture2D[] _actTex;
-
-    private Texture2D[] _kernelTex;
+    
+    private Conv2DLayerTexture[] _layerTex;
 
     private System.Random _random;
     
@@ -42,31 +43,35 @@ public class ConvTest : MonoBehaviour {
 
         // Create convolution layers
 
+        _layers = new ConvLayer2D[2];
+
         var l = ConvLayer2D.Create(inDim, 3, 16, 1, 0);
         if (l == null) {
             return;
         }
-        var l1 = l.Value;
+        _layers[0] = l.Value;
 
-        l = ConvLayer2D.Create(l1.OutDim, 3, 8, 1, 0);
+        l = ConvLayer2D.Create(_layers[0].OutDim, 3, 8, 1, 0);
         if (l == null) {
             return;
         }
-        var l2 = l.Value;
+        _layers[1] = l.Value;
 
-        NeuralMath.RandomGaussian(_random, l1.Kernel, 0f, 1f);
-        NeuralMath.RandomGaussian(_random, l2.Kernel, 0f, 1f);
+        for (int i = 0; i < _layers.Length; i++) {
+            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 1f);
+        }
 
         // Run convolution pass
 
-        var cj = new Conv2DJob();
-        cj.input = img;
-        cj.layer = l1;
-        handle = cj.Schedule(handle);
-        cj = new Conv2DJob();
-        cj.input = l1.output;
-        cj.layer = l2;
-        handle = cj.Schedule(handle);
+        var input = img;
+        for (int i = 0; i < _layers.Length; i++) {
+            var j = new Conv2DJob();
+            j.input = input;
+            j.layer = _layers[i];
+            handle = j.Schedule(handle);
+
+            input = _layers[i].output;
+        }
 
         handle.Complete();
 
@@ -76,50 +81,54 @@ public class ConvTest : MonoBehaviour {
         _imgTex.filterMode = FilterMode.Point;
         TextureUtils.ImgToTexture(img, _imgTex);
 
-        _actTex = TextureUtils.CreateTexture2DArray(l1.OutDim, l1.OutDim, l1.Depth);
-        for (int i = 0; i < l1.Depth; i++) {
-            TextureUtils.ActivationToTexture(l1.output, i, _actTex[i]);
+        _layerTex = new Conv2DLayerTexture[_layers.Length];
+        for (int i = 0; i < _layers.Length; i++) {
+            _layerTex[i] = new Conv2DLayerTexture(_layers[i]);
         }
 
-        _kernelTex = TextureUtils.CreateTexture2DArray(l1.Size, l1.Size, l1.Depth);
-        for (int i = 0; i < l1.Depth; i++) {
-            TextureUtils.KernelToTexture(l1, i, _kernelTex[i]);
-        }
+        // Clean up
 
-        l1.Dispose();
-        l2.Dispose();
+        for (int i = 0; i < _layers.Length; i++) {
+            _layers[i].Dispose();
+        }
         img.Dispose();
         DataManager.Unload();
     }
 
     private void OnGUI() {
-        float marginX = 10f;
-        float marginY = 10f;
-        float inSize = 28f * 4f;
-        float outSize = 26f * 4f;
-        float kSize = _kernelTex[0].width * 16f;
+        var layer = _layerTex[0];
+
+        const float marginX = 10f;
+        const float marginY = 10f;
+        float lblScaleY = 32f;
+        const float imgScale = 3f;
+        const float kernScale = 16f;
+
+        float inSize = layer.Source.InDim * imgScale;
+        float outSize = layer.Source.InDim * imgScale;
+        float kSize = layer.Kernel[0].width * kernScale;
 
         float y = 32f;
+        
+        GUI.Label(new Rect(marginX, y, inSize, lblScaleY), "Label: " + _imgLabel);
+        y += lblScaleY + marginY;
 
-        GUI.Label(new Rect(0f, y, inSize, 32f), "Label: " + _imgLabel);
-        y += 32f + marginY;
-
-        GUI.DrawTexture(new Rect(0f, y, inSize, inSize), _imgTex, ScaleMode.ScaleToFit);
+        GUI.DrawTexture(new Rect(marginX, y, inSize, inSize), _imgTex, ScaleMode.ScaleToFit);
         y += inSize + marginY;
 
-        for (int i = 0; i < _kernelTex.Length; i++) {
+        for (int i = 0; i < layer.Kernel.Length; i++) {
             GUI.DrawTexture(
                 new Rect(marginX + outSize * i, y, kSize, kSize),
-                _kernelTex[i],
+                layer.Kernel[i],
                 ScaleMode.ScaleToFit);
         }
 
         y += kSize + marginY;
 
-        for (int i = 0; i < _kernelTex.Length; i++) {
+        for (int i = 0; i < layer.Activation.Length; i++) {
             GUI.DrawTexture(
                 new Rect(marginX + outSize * i, y, outSize, outSize),
-                _actTex[i],
+                layer.Activation[i],
                 ScaleMode.ScaleToFit);
         }
     }
@@ -179,5 +188,29 @@ public static class TextureUtils {
 
         tex.SetPixels(0, 0, tex.width, tex.height, colors);
         tex.Apply(false);
+    }
+}
+
+
+/* Todo
+ - Use this, it's perfect for this case: https://docs.unity3d.com/ScriptReference/Texture2DArray.html
+ */
+public class Conv2DLayerTexture {
+    public ConvLayer2D Source;
+    public Texture2D[] Activation;
+    public Texture2D[] Kernel;
+
+    public Conv2DLayerTexture(ConvLayer2D layer) {
+        Source = layer;
+
+        Activation = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, layer.Depth);
+        for (int i = 0; i < layer.Depth; i++) {
+            TextureUtils.ActivationToTexture(layer.output, i, Activation[i]);
+        }
+
+        Kernel = TextureUtils.CreateTexture2DArray(layer.Size, layer.Size, layer.Depth);
+        for (int i = 0; i < layer.Depth; i++) {
+            TextureUtils.KernelToTexture(layer, i, Kernel[i]);
+        }
     }
 }
