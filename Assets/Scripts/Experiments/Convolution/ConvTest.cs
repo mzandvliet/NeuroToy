@@ -9,11 +9,15 @@ using NNBurst;
 - Stucture for a single conv layer
     - Easy creation and wiring
 
+- Fully connected layer for classification (or a conv layer with a kernel size equal to its input size)
+
 - MaxPool? (Fallen out of favor, can get by without it for now)
 
 - Kernel with multiple color channels, too, so X*Y*C*P
 
 - Backprop through 1 conv layer
+
+- Build a minibatch sgd optimizer that takes networks that are arbitrarily composed out of conv and FC layers
 
 
  */
@@ -44,19 +48,19 @@ public class ConvTest : MonoBehaviour {
 
         _layers = new List<ConvLayer2D>();
 
-        var l = ConvLayer2D.Create(imgDim, 9, 16, 1, 0);
+        var l = ConvLayer2D.Create(imgDim, 7, 16, 1, 0);
         if (l == null) {
             return;
         }
         _layers.Add(l.Value);
 
-        l = ConvLayer2D.Create(_layers[0].OutDim, 7, 16, 1, 0);
+        l = ConvLayer2D.Create(_layers[0].OutDim, 5, 16, 1, 0);
         if (l == null) {
             return;
         }
         _layers.Add(l.Value);
 
-        l = ConvLayer2D.Create(_layers[1].OutDim, 5, 16, 1, 0);
+        l = ConvLayer2D.Create(_layers[1].OutDim, 3, 16, 1, 0);
         if (l == null) {
             return;
         }

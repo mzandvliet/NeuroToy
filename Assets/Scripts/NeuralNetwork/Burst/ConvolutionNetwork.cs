@@ -57,7 +57,7 @@ namespace NNBurst {
         
         /* Todo:
          - Consider input has depth 16, this layer has depth 8; how to convolve?
-         - Add bias
+         - Add bias (note: single bias per kernel, or bias per depth? Hmmmm...)
          - Padding
          - Multiple color channels
          - parallelize over depth or color channels (note: can't divvy up using NativeSlice)
