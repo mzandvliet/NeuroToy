@@ -135,7 +135,7 @@ namespace NNBurst {
                 d.Output = layer.Outputs;
                 handle = d.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
 
-                var s = new SigmoidEqualsParallelJob();
+                var s = new SigmoidAssignParallelJob();
                 s.Data = layer.Outputs;
                 handle = s.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
 
@@ -204,12 +204,12 @@ namespace NNBurst {
         public static JobHandle AddGradients(NativeGradients from, NativeGradients to, JobHandle handle = new JobHandle()) {
             // Todo: parallelize over layers and/or biases/weights
             for (int l = 0; l < from.Layers.Length; l++) {
-                var addBiasJob = new AddEqualsJob();
+                var addBiasJob = new AddAssignJob();
                 addBiasJob.Data = from.Layers[l].DCDZ;
                 addBiasJob.To = to.Layers[l].DCDZ;
                 handle = addBiasJob.Schedule(handle);
 
-                var addWeightsJob = new AddEqualsJob();
+                var addWeightsJob = new AddAssignJob();
                 addWeightsJob.Data = from.Layers[l].DCDW;
                 addWeightsJob.To = to.Layers[l].DCDW;
                 handle = addWeightsJob.Schedule(handle);
@@ -223,22 +223,22 @@ namespace NNBurst {
             // Also, parallelize over all the arrays
 
             for (int l = 0; l < net.Layers.Length; l++) {
-                var m = new MultiplyEqualsJob();
+                var m = new MultiplyAssignJob();
                 m.Data = gradients.Layers[l].DCDZ;
                 m.Value = rate;
                 handle = m.Schedule(handle);
 
-                var s = new SubtractEqualsJob();
+                var s = new SubtractAssignJob();
                 s.Data = gradients.Layers[l].DCDZ;
                 s.From = net.Layers[l].Biases;
                 handle = s.Schedule(handle);
 
-                m = new MultiplyEqualsJob();
+                m = new MultiplyAssignJob();
                 m.Data = gradients.Layers[l].DCDW;
                 m.Value = rate;
                 handle = m.Schedule(handle);
 
-                s = new SubtractEqualsJob();
+                s = new SubtractAssignJob();
                 s.Data = gradients.Layers[l].DCDW;
                 s.From = net.Layers[l].Weights;
                 handle = s.Schedule(handle);
@@ -311,7 +311,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct SigmoidEqualsJob : IJob {
+    public struct SigmoidAssignJob : IJob {
         public NativeArray<float> Data;
 
         public void Execute() {
@@ -322,7 +322,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct SigmoidEqualsParallelJob : IJobParallelFor {
+    public struct SigmoidAssignParallelJob : IJobParallelFor {
         public NativeArray<float> Data;
 
         public void Execute(int i) {
@@ -331,7 +331,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct AddEqualsJob : IJob {
+    public struct AddAssignJob : IJob {
         [ReadOnly] public NativeArray<float> Data;
         public NativeArray<float> To;
 
@@ -343,7 +343,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct SubtractEqualsJob : IJob {
+    public struct SubtractAssignJob : IJob {
         [ReadOnly] public NativeArray<float> Data;
         public NativeArray<float> From;
 
@@ -355,7 +355,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct MultiplyEqualsJob : IJob {
+    public struct MultiplyAssignJob : IJob {
         public NativeArray<float> Data;
         [ReadOnly] public float Value;
 
@@ -395,15 +395,16 @@ namespace NNBurst {
     public struct DotJob : IJob {
         [ReadOnly] public NativeArray<float> Input;
         [ReadOnly] public NativeArray<float> Weights;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute() {
             // Outer loop is parallelizable
             for (int n = 0; n < Output.Length; n++) {
-                // Inner loop is best kep synchronous
+                float a = 0f;
                 for (int i = 0; i < Input.Length; i++) {
-                    Output[n] += Input[i] * Weights[Input.Length * n + i];
+                    a += Input[i] * Weights[Input.Length * n + i];
                 }
+                Output[n] = a;
             }
         }
     }
@@ -413,13 +414,14 @@ namespace NNBurst {
     public struct DotParallelJob : IJobParallelFor {
         [ReadOnly] public NativeArray<float> Input;
         [ReadOnly] public NativeArray<float> Weights;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute(int n) {
-            // Inner loop is best kep synchronous
+            float a = 0f;
             for (int i = 0; i < Input.Length; i++) {
-                Output[n] += Input[i] * Weights[Input.Length * n + i];
+                a += Input[i] * Weights[Input.Length * n + i];
             }
+            Output[n] = a;
         }
     }
 

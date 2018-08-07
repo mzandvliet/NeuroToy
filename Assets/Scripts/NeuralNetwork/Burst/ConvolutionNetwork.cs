@@ -80,6 +80,7 @@ namespace NNBurst {
                         int inY = y + kHalf;
 
                         float a = 0f;
+
                         for (int kX = -kHalf; kX <= kHalf; kX++) {
                             for (int kY = -kHalf; kY <= kHalf; kY++) {
 
@@ -90,7 +91,23 @@ namespace NNBurst {
                             }
                         }
 
-                        a = NeuralMath.ReLU(a);
+                        /* 
+                        
+                        Todo: separate job? Makes it more composable.
+                        Separate job means:
+                            - extra computation for looping :(
+                            - easier composition and automatic differentiation :)
+
+                        Best of both: compose as separate, but produce interleaved
+                        job code for efficient computation. :D
+
+                        Same goes for adding bias. Tensorflow has that separate.
+
+                        It would make my backprop code look nicer.
+                         
+                         */
+                        a = NeuralMath.ReLU(a); 
+
                         o[y * outDim + x] = a;
                     }
                 }
