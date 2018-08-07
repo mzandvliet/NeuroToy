@@ -95,22 +95,6 @@ namespace NNBurst {
                             }
                         }
 
-                        /* 
-                        
-                        Todo: separate job? Makes it more composable.
-                        Separate job means:
-                            - extra computation for looping :(
-                            - easier composition and automatic differentiation :)
-
-                        Best of both: compose as separate, but produce interleaved
-                        job code for efficient computation. :D
-
-                        Same goes for adding bias. Tensorflow has that separate.
-
-                        It would make my backprop code look nicer.
-                         
-                         */
-
                         o[y * outDim + x] = a;
                     }
                 }

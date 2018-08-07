@@ -124,20 +124,22 @@ namespace NNBurst {
             for (int l = 0; l < net.Layers.Length; l++) {
                 var layer = net.Layers[l];
 
+                const int numThreads = 8;
+
                 var b = new CopyParallelJob();
                 b.From = layer.Biases;
                 b.To = layer.Outputs;
-                handle = b.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
+                handle = b.Schedule(layer.Outputs.Length, layer.Outputs.Length / numThreads, handle);
 
                 var d = new DotParallelJob();
                 d.Input = last;
                 d.Weights = layer.Weights;
                 d.Output = layer.Outputs;
-                handle = d.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
+                handle = d.Schedule(layer.Outputs.Length, layer.Outputs.Length / numThreads, handle);
 
                 var s = new SigmoidAssignParallelJob();
                 s.Data = layer.Outputs;
-                handle = s.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
+                handle = s.Schedule(layer.Outputs.Length, layer.Outputs.Length / numThreads, handle);
 
                 last = layer.Outputs;
             }

@@ -24,6 +24,7 @@ using NNBurst;
 
 public class ConvTest : MonoBehaviour {
     private IList<ConvLayer2D> _layers;
+    private NativeNetworkLayer _fcLayer;
 
     private int _imgLabel;
     private Texture2D _imgTex;
@@ -33,7 +34,7 @@ public class ConvTest : MonoBehaviour {
     private System.Random _random;
     
     private void Awake() {
-        _random = new System.Random(1234);
+        _random = new System.Random();
 
         DataManager.Load();
 
@@ -57,12 +58,52 @@ public class ConvTest : MonoBehaviour {
         l = ConvLayer2D.Create(_layers[2].OutDim, 3, 16, 1, 0);
         _layers.Add(l.Value);
 
+        int convOutCount = _layers[2].OutDim * _layers[2].OutDim * _layers[2].Depth;
+        Debug.Log("Conv out neuron count: " + convOutCount);
+
+        _fcLayer = new NativeNetworkLayer(10, convOutCount);
+
+        // Parameter initialization
+
         for (int i = 0; i < _layers.Count; i++) {
             NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 0.2f);
             NeuralMath.RandomGaussian(_random, _layers[i].Bias, 0f, 0.2f);
         }
 
-        // Run convolution pass
+        NeuralMath.RandomGaussian(_random, _fcLayer.Biases, 0f, 0.2f);
+        NeuralMath.RandomGaussian(_random, _fcLayer.Weights, 0f, 0.2f);
+
+        // Forward pass
+
+        h = ScheduleForward(img, _layers, _fcLayer, h);
+        h.Complete();
+
+        int predictedLbl = NeuralMath.ArgMax(_fcLayer.Outputs);
+        Debug.Log("Prediction: " + predictedLbl);
+
+        // Create debug textures
+
+        _imgTex = new Texture2D(imgDim, imgDim, TextureFormat.ARGB32, false, true);
+        _imgTex.filterMode = FilterMode.Point;
+        TextureUtils.ImgToTexture(img, _imgTex);
+
+        _layerTex = new List<Conv2DLayerTexture>(_layers.Count);
+        for (int i = 0; i < _layers.Count; i++) {
+            _layerTex.Add(new Conv2DLayerTexture(_layers[i]));
+        }
+
+        // Clean up
+
+        for (int i = 0; i < _layers.Count; i++) {
+            _layers[i].Dispose();
+        }
+        _fcLayer.Dispose();
+        img.Dispose();
+        DataManager.Unload();
+    }
+
+    private static JobHandle ScheduleForward(NativeArray<float> img, IList<ConvLayer2D> _layers, NativeNetworkLayer _fcLayer, JobHandle h) {
+        // Convolution layers
 
         var input = img;
         for (int i = 0; i < _layers.Count; i++) {
@@ -81,26 +122,27 @@ public class ConvTest : MonoBehaviour {
 
             input = _layers[i].output;
         }
-        h.Complete();
 
-        // Create debug textures
+        // Fully connected layer (todo: reuse from library)
 
-        _imgTex = new Texture2D(imgDim, imgDim, TextureFormat.ARGB32, false, true);
-        _imgTex.filterMode = FilterMode.Point;
-        TextureUtils.ImgToTexture(img, _imgTex);
+        const int numThreads = 8;
 
-        _layerTex = new List<Conv2DLayerTexture>(_layers.Count);
-        for (int i = 0; i < _layers.Count; i++) {
-            _layerTex.Add(new Conv2DLayerTexture(_layers[i]));
-        }
+        var b = new CopyParallelJob();
+        b.From = _fcLayer.Biases;
+        b.To = _fcLayer.Outputs;
+        h = b.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);
 
-        // Clean up
+        var d = new DotParallelJob();
+        d.Input = _layers[2].output;
+        d.Weights = _fcLayer.Weights;
+        d.Output = _fcLayer.Outputs;
+        h = d.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);
 
-        for (int i = 0; i < _layers.Count; i++) {
-            _layers[i].Dispose();
-        }
-        img.Dispose();
-        DataManager.Unload();
+        var s = new SigmoidAssignParallelJob();
+        s.Data = _fcLayer.Outputs;
+        h = s.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);
+
+        return h;
     }
 
     private void OnGUI() {
