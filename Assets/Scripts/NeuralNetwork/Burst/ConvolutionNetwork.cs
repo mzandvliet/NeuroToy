@@ -7,10 +7,11 @@ using System;
 namespace NNBurst {
     public struct ConvLayer2D : System.IDisposable {
         public int Size;
-        public int Depth;
+        public int OutDepth;
         public int Stride;
         public int Padding;
         public int InDim;
+        public int InDepth;
         public int OutDim;
 
         public NativeArray<float> Kernel;
@@ -18,25 +19,26 @@ namespace NNBurst {
         public NativeArray<float> Bias;
         public NativeArray<float> output;
 
-        public static ConvLayer2D? Create(int inDim, int size, int depth, int stride, int padding) {
+        public static ConvLayer2D? Create(int inDim, int inDepth, int size, int outDepth, int stride, int padding) {
             int outDim = GetOutputSize(inDim, size, stride, padding);
             if (outDim == -1) {
                 Debug.LogError("Cannot perform convolution with this kernel, output dimensions ill defined");
                 return null;
             }
-            return new ConvLayer2D(inDim, outDim, size, depth, stride, padding);
+            return new ConvLayer2D(inDim, inDepth, outDim, size, outDepth, stride, padding);
         }        
 
-        private ConvLayer2D(int inDim, int outDim, int size, int depth, int stride, int padding) {
+        private ConvLayer2D(int inDim, int inDepth, int outDim, int size, int outDepth, int stride, int padding) {
             InDim = inDim;
+            InDepth = inDepth;
             OutDim = outDim;
             Size = size;
-            Depth = depth;
+            OutDepth = outDepth;
             Stride = stride;
             Padding = padding;
-            Kernel = new NativeArray<float>(size * size * depth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            Bias = new NativeArray<float>(depth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            output = new NativeArray<float>(outDim * outDim * depth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Kernel = new NativeArray<float>(size * size * inDepth * outDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Bias = new NativeArray<float>(outDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            output = new NativeArray<float>(outDim * outDim * outDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         }
 
         public void Dispose() {
@@ -58,23 +60,13 @@ namespace NNBurst {
     public struct Conv2DJob : IJob {
         [ReadOnly] public NativeArray<float> input;
         public ConvLayer2D layer;
-        
-        /* Todo:
-         - Consider input has depth 16, this layer has depth 8; how to convolve?
-         - Add bias (note: single bias per kernel, or bias per depth? Hmmmm...)
-         - Padding
-         - Multiple color channels
-         - parallelize over depth or color channels (note: can't divvy up using NativeSlice)
-
-         Note: bonus of having a single array for output: super easy to hook up FC layers
-         */
 
         public void Execute() {
             var outDim = layer.OutDim;
 
             int kHalf = layer.Size / 2;
 
-            for (int c = 0; c < layer.Depth; c++) {
+            for (int c = 0; c < layer.OutDepth; c++) {
                 var o = layer.output.Slice(outDim * outDim * c, outDim * outDim);
                 var k = layer.Kernel.Slice(layer.Size * layer.Size * c, layer.Size * layer.Size);
 
@@ -84,6 +76,11 @@ namespace NNBurst {
                         int inY = y + kHalf;
 
                         float a = 0f;
+
+                        /* 
+                         Todo: pass kernel over all input depth, since we now have
+                         separate weights for all n input depths.  
+                        */
 
                         for (int kX = -kHalf; kX <= kHalf; kX++) {
                             for (int kY = -kHalf; kY <= kHalf; kY++) {
@@ -111,7 +108,7 @@ namespace NNBurst {
 
             int kHalf = layer.Size / 2;
 
-            for (int c = 0; c < layer.Depth; c++) {
+            for (int c = 0; c < layer.OutDepth; c++) {
                 var o = layer.output.Slice(outDim * outDim * c, outDim * outDim);
 
                 for (int i = 0; i < o.Length; i++) {

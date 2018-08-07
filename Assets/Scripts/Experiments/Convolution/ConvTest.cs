@@ -6,19 +6,21 @@ using DataManager = NNBurst.Mnist.DataManager;
 using NNBurst;
 
 /*
+
+Todo:
+
+- Sort out the channel/depth business
+    - Input image is channels=1 for greyscale, channels=3 for RGB color
+
 - Stucture for a single conv layer
     - Easy creation and wiring
 
-- Fully connected layer for classification (or a conv layer with a kernel size equal to its input size)
+- MaxPool, or AveragePool? (Fallen out of favor, can get by without it for now)
 
-- MaxPool? (Fallen out of favor, can get by without it for now)
+- Backprop
 
-- Kernel with multiple color channels, too, so X*Y*C*P
-
-- Backprop through 1 conv layer
-
-- Build a minibatch sgd optimizer that takes networks that are arbitrarily composed out of conv and FC layers
-
+- Build a system that takes networks that are arbitrarily composed out of conv and FC layers
+  and builds a SGD optimizer for it.
 
  */
 
@@ -38,8 +40,9 @@ public class ConvTest : MonoBehaviour {
 
         DataManager.Load();
 
-        const int imgDim = 28;
-        var img = new NativeArray<float>(imgDim * imgDim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        const int imgSize = 28;
+        const int imgDepth = 1; // 3 for RGB
+        var img = new NativeArray<float>(imgSize * imgSize, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
         const int imgIdx = 23545;
         _imgLabel = DataManager.Train.Labels[imgIdx];
@@ -49,16 +52,14 @@ public class ConvTest : MonoBehaviour {
 
         _layers = new List<ConvLayer2D>();
 
-        var l = ConvLayer2D.Create(imgDim, 7, 16, 1, 0);
-        _layers.Add(l.Value);
-        l = ConvLayer2D.Create(_layers[0].OutDim, 5, 16, 1, 0);
-        _layers.Add(l.Value);
-        l = ConvLayer2D.Create(_layers[1].OutDim, 3, 16, 1, 0);
-        _layers.Add(l.Value);
-        l = ConvLayer2D.Create(_layers[2].OutDim, 3, 16, 1, 0);
-        _layers.Add(l.Value);
+        var l1 = ConvLayer2D.Create(imgSize, imgDepth, 7, 16, 1, 0).Value;
+        _layers.Add(l1);
+        var l2 = ConvLayer2D.Create(l1.OutDim, l1.OutDepth, 5, 8, 1, 0).Value;
+        _layers.Add(l2);
+        var l3 = ConvLayer2D.Create(l2.OutDim, l2.OutDepth, 3, 4, 1, 0).Value;
+        _layers.Add(l3);
 
-        int convOutCount = _layers[2].OutDim * _layers[2].OutDim * _layers[2].Depth;
+        int convOutCount = l2.OutDim * l2.OutDim * l2.OutDepth;
         Debug.Log("Conv out neuron count: " + convOutCount);
 
         _fcLayer = new NativeNetworkLayer(10, convOutCount);
@@ -83,7 +84,7 @@ public class ConvTest : MonoBehaviour {
 
         // Create debug textures
 
-        _imgTex = new Texture2D(imgDim, imgDim, TextureFormat.ARGB32, false, true);
+        _imgTex = new Texture2D(imgSize, imgSize, TextureFormat.ARGB32, false, true);
         _imgTex.filterMode = FilterMode.Point;
         TextureUtils.ImgToTexture(img, _imgTex);
 
@@ -263,13 +264,13 @@ public class Conv2DLayerTexture {
     public Conv2DLayerTexture(ConvLayer2D layer) {
         Source = layer;
 
-        Activation = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, layer.Depth);
-        for (int i = 0; i < layer.Depth; i++) {
+        Activation = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, layer.OutDepth);
+        for (int i = 0; i < layer.OutDepth; i++) {
             TextureUtils.ActivationToTexture(layer.output, i, Activation[i]);
         }
 
-        Kernel = TextureUtils.CreateTexture2DArray(layer.Size, layer.Size, layer.Depth);
-        for (int i = 0; i < layer.Depth; i++) {
+        Kernel = TextureUtils.CreateTexture2DArray(layer.Size, layer.Size, layer.OutDepth);
+        for (int i = 0; i < layer.OutDepth; i++) {
             TextureUtils.KernelToTexture(layer, i, Kernel[i]);
         }
     }
