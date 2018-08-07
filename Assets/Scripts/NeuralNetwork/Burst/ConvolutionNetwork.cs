@@ -6,15 +6,17 @@ using System;
 
 namespace NNBurst {
     public struct ConvLayer2D : System.IDisposable {
-        [ReadOnly] public int Size;
-        [ReadOnly] public int Depth;
-        [ReadOnly] public int Stride;
-        [ReadOnly] public int Padding;
-        [ReadOnly] public int InDim;
-        [ReadOnly] public int OutDim;
+        public int Size;
+        public int Depth;
+        public int Stride;
+        public int Padding;
+        public int InDim;
+        public int OutDim;
 
-        [ReadOnly] public NativeArray<float> Kernel;
-        [WriteOnly] public NativeArray<float> output;
+        public NativeArray<float> Kernel;
+
+        public NativeArray<float> Bias;
+        public NativeArray<float> output;
 
         public static ConvLayer2D? Create(int inDim, int size, int depth, int stride, int padding) {
             int outDim = GetOutputSize(inDim, size, stride, padding);
@@ -33,11 +35,13 @@ namespace NNBurst {
             Stride = stride;
             Padding = padding;
             Kernel = new NativeArray<float>(size * size * depth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Bias = new NativeArray<float>(depth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             output = new NativeArray<float>(outDim * outDim * depth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         }
 
         public void Dispose() {
             Kernel.Dispose();
+            Bias.Dispose();
             output.Dispose();
         }
 
@@ -106,11 +110,41 @@ namespace NNBurst {
                         It would make my backprop code look nicer.
                          
                          */
-                        a = NeuralMath.ReLU(a); 
 
                         o[y * outDim + x] = a;
                     }
                 }
+            }
+        }
+    }
+
+    [BurstCompile]
+    public struct AdddBias2DJob : IJob {
+        public ConvLayer2D layer;
+
+        public void Execute() {
+            var outDim = layer.OutDim;
+
+            int kHalf = layer.Size / 2;
+
+            for (int c = 0; c < layer.Depth; c++) {
+                var o = layer.output.Slice(outDim * outDim * c, outDim * outDim);
+
+                for (int i = 0; i < o.Length; i++) {
+                    o[i] += layer.Bias[c];
+                }
+            }
+        }
+    }
+
+    // Since ReLU calculations are orthogonal per pixel, no need for 2d structure
+    [BurstCompile]
+    public struct ReluAssignJob : IJob {
+        public NativeArray<float> Data;
+
+        public void Execute() {
+            for (int i = 0; i < Data.Length; i++) {
+                Data[i] = NeuralMath.ReLU(Data[i]);
             }
         }
     }

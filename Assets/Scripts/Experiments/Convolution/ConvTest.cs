@@ -42,52 +42,46 @@ public class ConvTest : MonoBehaviour {
 
         const int imgIdx = 23545;
         _imgLabel = DataManager.Train.Labels[imgIdx];
-        var handle = NeuralJobs.CopyInput(img, DataManager.Train, imgIdx);
+        var h = NeuralJobs.CopyInput(img, DataManager.Train, imgIdx);
 
         // Create convolution layers
 
         _layers = new List<ConvLayer2D>();
 
         var l = ConvLayer2D.Create(imgDim, 7, 16, 1, 0);
-        if (l == null) {
-            return;
-        }
         _layers.Add(l.Value);
-
         l = ConvLayer2D.Create(_layers[0].OutDim, 5, 16, 1, 0);
-        if (l == null) {
-            return;
-        }
         _layers.Add(l.Value);
-
         l = ConvLayer2D.Create(_layers[1].OutDim, 3, 16, 1, 0);
-        if (l == null) {
-            return;
-        }
         _layers.Add(l.Value);
         l = ConvLayer2D.Create(_layers[2].OutDim, 3, 16, 1, 0);
-        if (l == null) {
-            return;
-        }
         _layers.Add(l.Value);
 
         for (int i = 0; i < _layers.Count; i++) {
-            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 1f);
+            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 0.2f);
+            NeuralMath.RandomGaussian(_random, _layers[i].Bias, 0f, 0.2f);
         }
 
         // Run convolution pass
 
         var input = img;
         for (int i = 0; i < _layers.Count; i++) {
-            var j = new Conv2DJob();
-            j.input = input;
-            j.layer = _layers[i];
-            handle = j.Schedule(handle);
+            var cj = new Conv2DJob();
+            cj.input = input;
+            cj.layer = _layers[i];
+            h = cj.Schedule(h);
+
+            var bj = new AdddBias2DJob();
+            bj.layer = _layers[i];
+            h = bj.Schedule(h);
+
+            var rj = new NNBurst.ReluAssignJob();
+            rj.Data = _layers[i].output;
+            h = rj.Schedule(h);
 
             input = _layers[i].output;
         }
-
-        handle.Complete();
+        h.Complete();
 
         // Create debug textures
 
