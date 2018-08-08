@@ -66,9 +66,33 @@ namespace NNBurst {
 
             int kHalf = layer.Size / 2;
 
-            for (int c = 0; c < layer.OutDepth; c++) {
-                var o = layer.output.Slice(outDim * outDim * c, outDim * outDim);
-                var k = layer.Kernel.Slice(layer.Size * layer.Size * c, layer.Size * layer.Size);
+            for (int dOut = 0; dOut < layer.OutDepth; dOut++) {
+                var o = layer.output.Slice(outDim * outDim * dOut, outDim * outDim);
+                var k = layer.Kernel.Slice(layer.Size * layer.Size * dOut, layer.Size * layer.Size);
+
+                /* 
+                Todo: pass kernel over all input depth, since we now have
+                separate weights for all n input depths.
+
+                This means an additional inner loop over depthIn
+
+                First, we need an easier way to address the data.
+                It's all still dot products between vector subspaces.
+                Find a few ways to make those way nicer to write.
+
+                Slices are one way to make this nicer, since they at least
+                encapsulate some addressing. This helps separate color
+                channels, filter depth channels, whatever.
+
+                Next, we want to have easier n-dimensional euclidean
+                structure indexing.
+
+                We could use functions to make this clearer, which compile
+                to inlined code.
+
+                Perhaps we can take the NativeSlice code and create our own
+                EuclideanNativeSlice thing.
+                */
 
                 for (int x = 0; x < outDim; x += layer.Stride) {
                     for (int y = 0; y < outDim; y += layer.Stride) {
@@ -77,10 +101,7 @@ namespace NNBurst {
 
                         float a = 0f;
 
-                        /* 
-                         Todo: pass kernel over all input depth, since we now have
-                         separate weights for all n input depths.  
-                        */
+                        
 
                         for (int kX = -kHalf; kX <= kHalf; kX++) {
                             for (int kY = -kHalf; kY <= kHalf; kY++) {
