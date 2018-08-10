@@ -26,6 +26,10 @@ using Unity.Mathematics;
     probably still takes the managed state and marshalls it back to
     unmanaged land. Unity will have to create the fastest path themselves.
 
+    Todo: you can make the native array a wrapper around the managed memory
+
+    basiclly you fix the Vecotr3[], pass its pointer into NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray.  You might need to call NativeArrayUnsafeUtility.SetAtomicSafetyHandle at some point so the safety system dosnt throw null refs
+
      */
 
 namespace NNBurst {
