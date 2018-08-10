@@ -6,8 +6,8 @@ using System;
 
 namespace NNBurst {
     public struct ConvLayer2D : System.IDisposable {
-        public int Size;
-        public int OutDepth;
+        public int KWidth;
+        public int NumFilters;
         public int Stride;
         public int Padding;
         public int InDim;
@@ -32,8 +32,8 @@ namespace NNBurst {
             InDim = inDim;
             InDepth = inDepth;
             OutDim = outDim;
-            Size = size;
-            OutDepth = outDepth;
+            KWidth = size;
+            NumFilters = outDepth;
             Stride = stride;
             Padding = padding;
             Kernel = new NativeArray<float>(size * size * inDepth * outDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
@@ -61,59 +61,74 @@ namespace NNBurst {
         [ReadOnly] public NativeArray<float> input;
         public ConvLayer2D layer;
 
+        /* 
+        Todo: pass kernel over all input depth, since we now have
+        separate weights for all n input depths.
+
+        This means an additional inner loop over depthIn
+
+        First, we need an easier way to address the data.
+        It's all still dot products between vector subspaces.
+        Find a few ways to make those way nicer to write.
+
+        Slices are one way to make this nicer, since they at least
+        encapsulate some addressing. This helps separate color
+        channels, filter depth channels, whatever.
+
+        Next, we want to have easier n-dimensional euclidean
+        structure indexing.
+
+        We could use functions to make this clearer, which compile
+        to inlined code.
+
+        Perhaps we can take the NativeSlice code and create our own
+        EuclideanNativeSlice thing.
+        */
+
         public void Execute() {
-            var outDim = layer.OutDim;
+            var outSize = layer.OutDim * layer.OutDim;
+            int kHalf = layer.KWidth / 2;
+            int kSize = layer.KWidth * layer.KWidth;
 
-            int kHalf = layer.Size / 2;
+            // int fIdx = 1; // Filter in the kernel
+            // int dIdx = 1; // Depth in the filter
+            // int filterSpan = kSize * layer.InDepth; // Size of a single filter in memory
+            // var filter = layer.Kernel.Slice(filterSpan * fIdx, kSize); // Subset of memory corresponding to filter
+            // var fSlice = filter.Slice(kSize * dIdx); // Slice of filter at depth
 
-            for (int dOut = 0; dOut < layer.OutDepth; dOut++) {
-                var o = layer.output.Slice(outDim * outDim * dOut, outDim * outDim);
-                var k = layer.Kernel.Slice(layer.Size * layer.Size * dOut, layer.Size * layer.Size);
+            // For all filters
+            for (int f = 0; f < layer.NumFilters; f++) {
+                var output = layer.output.Slice(outSize * f, outSize); // Subset of memory corresponding to output for filter
 
-                /* 
-                Todo: pass kernel over all input depth, since we now have
-                separate weights for all n input depths.
+                int filterSpan = kSize * layer.InDepth; // Size of a single filter in memory
+                var filter = layer.Kernel.Slice(filterSpan * f, filterSpan);
 
-                This means an additional inner loop over depthIn
-
-                First, we need an easier way to address the data.
-                It's all still dot products between vector subspaces.
-                Find a few ways to make those way nicer to write.
-
-                Slices are one way to make this nicer, since they at least
-                encapsulate some addressing. This helps separate color
-                channels, filter depth channels, whatever.
-
-                Next, we want to have easier n-dimensional euclidean
-                structure indexing.
-
-                We could use functions to make this clearer, which compile
-                to inlined code.
-
-                Perhaps we can take the NativeSlice code and create our own
-                EuclideanNativeSlice thing.
-                */
-
-                for (int x = 0; x < outDim; x += layer.Stride) {
-                    for (int y = 0; y < outDim; y += layer.Stride) {
+                // For all pixels in the output
+                for (int x = 0; x < layer.OutDim; x += layer.Stride) {
+                    for (int y = 0; y < layer.OutDim; y += layer.Stride) {
                         int inX = x + kHalf;
                         int inY = y + kHalf;
 
                         float a = 0f;
 
-                        
+                        // For all depth slices in this filter
+                        for (int fS = 0; fS < layer.InDepth; fS++) {
+                            var fSlice = filter.Slice(kSize * fS);
 
-                        for (int kX = -kHalf; kX <= kHalf; kX++) {
-                            for (int kY = -kHalf; kY <= kHalf; kY++) {
+                            for (int kX = -kHalf; kX <= kHalf; kX++) {
+                                for (int kY = -kHalf; kY <= kHalf; kY++) {
 
-                                int inIdx = (inY + kY) * layer.InDim + (inX + kX);
-                                int kernIdx = layer.Size * (kHalf + kY) + (kHalf + kX);
+                                    // Do a dot product
+                                    int inIdx = (inY + kY) * layer.InDim + (inX + kX);
+                                    int kernIdx = layer.KWidth * (kHalf + kY) + (kHalf + kX);
 
-                                a += input[inIdx] * k[kernIdx];
+                                    a += input[inIdx] * fSlice[kernIdx];
+                                }
                             }
                         }
+                        
 
-                        o[y * outDim + x] = a;
+                        output[y * layer.OutDim + x] = a;
                     }
                 }
             }
@@ -127,9 +142,9 @@ namespace NNBurst {
         public void Execute() {
             var outDim = layer.OutDim;
 
-            int kHalf = layer.Size / 2;
+            int kHalf = layer.KWidth / 2;
 
-            for (int c = 0; c < layer.OutDepth; c++) {
+            for (int c = 0; c < layer.NumFilters; c++) {
                 var o = layer.output.Slice(outDim * outDim * c, outDim * outDim);
 
                 for (int i = 0; i < o.Length; i++) {

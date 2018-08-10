@@ -54,12 +54,12 @@ public class ConvTest : MonoBehaviour {
 
         var l1 = ConvLayer2D.Create(imgSize, imgDepth, 7, 16, 1, 0).Value;
         _layers.Add(l1);
-        var l2 = ConvLayer2D.Create(l1.OutDim, l1.OutDepth, 5, 8, 1, 0).Value;
+        var l2 = ConvLayer2D.Create(l1.OutDim, l1.NumFilters, 5, 8, 1, 0).Value;
         _layers.Add(l2);
-        var l3 = ConvLayer2D.Create(l2.OutDim, l2.OutDepth, 3, 4, 1, 0).Value;
+        var l3 = ConvLayer2D.Create(l2.OutDim, l2.NumFilters, 3, 4, 1, 0).Value;
         _layers.Add(l3);
 
-        int convOutCount = l2.OutDim * l2.OutDim * l2.OutDepth;
+        int convOutCount = l2.OutDim * l2.OutDim * l2.NumFilters;
         Debug.Log("Conv out neuron count: " + convOutCount);
 
         _fcLayer = new NativeNetworkLayer(10, convOutCount);
@@ -235,15 +235,16 @@ public static class TextureUtils {
         tex.Apply(false);
     }
 
+    // Todo: support for the multiple filter slices
     public static void KernelToTexture(ConvLayer2D layer, int channel, Texture2D tex) {
-        var colors = new Color[layer.Size * layer.Size];
+        var colors = new Color[layer.KWidth * layer.KWidth];
 
-        int start = layer.Size * layer.Size * channel;
+        int start = layer.KWidth * layer.KWidth * channel;
 
-        for (int y = 0; y < layer.Size; y++) {
-            for (int x = 0; x < layer.Size; x++) {
-                float pix = layer.Kernel[start + y * layer.Size + x];
-                colors[y * layer.Size + x] = new Color(pix, pix, pix, 1f);
+        for (int y = 0; y < layer.KWidth; y++) {
+            for (int x = 0; x < layer.KWidth; x++) {
+                float pix = layer.Kernel[start + y * layer.KWidth + x];
+                colors[y * layer.KWidth + x] = new Color(pix, pix, pix, 1f);
             }
         }
 
@@ -264,13 +265,13 @@ public class Conv2DLayerTexture {
     public Conv2DLayerTexture(ConvLayer2D layer) {
         Source = layer;
 
-        Activation = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, layer.OutDepth);
-        for (int i = 0; i < layer.OutDepth; i++) {
+        Activation = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, layer.NumFilters);
+        for (int i = 0; i < layer.NumFilters; i++) {
             TextureUtils.ActivationToTexture(layer.output, i, Activation[i]);
         }
 
-        Kernel = TextureUtils.CreateTexture2DArray(layer.Size, layer.Size, layer.OutDepth);
-        for (int i = 0; i < layer.OutDepth; i++) {
+        Kernel = TextureUtils.CreateTexture2DArray(layer.KWidth, layer.KWidth, layer.NumFilters);
+        for (int i = 0; i < layer.NumFilters; i++) {
             TextureUtils.KernelToTexture(layer, i, Kernel[i]);
         }
     }
