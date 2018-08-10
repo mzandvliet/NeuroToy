@@ -7,13 +7,14 @@ using System;
 namespace NNBurst {
     public struct ConvLayer2D : System.IDisposable {
         public int KWidth;
+        public int InWidth;
+        public int OutWidth;
+
+        public int InDepth;
         public int NumFilters;
         public int Stride;
         public int Padding;
-        public int InDim;
-        public int InDepth;
-        public int OutDim;
-
+        
         public NativeArray<float> Kernel;
 
         public NativeArray<float> Bias;
@@ -29,9 +30,9 @@ namespace NNBurst {
         }        
 
         private ConvLayer2D(int inDim, int inDepth, int outDim, int size, int outDepth, int stride, int padding) {
-            InDim = inDim;
+            InWidth = inDim;
             InDepth = inDepth;
-            OutDim = outDim;
+            OutWidth = outDim;
             KWidth = size;
             NumFilters = outDepth;
             Stride = stride;
@@ -86,15 +87,9 @@ namespace NNBurst {
         */
 
         public void Execute() {
-            var outSize = layer.OutDim * layer.OutDim;
+            var outSize = layer.OutWidth * layer.OutWidth;
             int kHalf = layer.KWidth / 2;
             int kSize = layer.KWidth * layer.KWidth;
-
-            // int fIdx = 1; // Filter in the kernel
-            // int dIdx = 1; // Depth in the filter
-            // int filterSpan = kSize * layer.InDepth; // Size of a single filter in memory
-            // var filter = layer.Kernel.Slice(filterSpan * fIdx, kSize); // Subset of memory corresponding to filter
-            // var fSlice = filter.Slice(kSize * dIdx); // Slice of filter at depth
 
             // For all filters
             for (int f = 0; f < layer.NumFilters; f++) {
@@ -104,8 +99,8 @@ namespace NNBurst {
                 var filter = layer.Kernel.Slice(filterSpan * f, filterSpan);
 
                 // For all pixels in the output
-                for (int x = 0; x < layer.OutDim; x += layer.Stride) {
-                    for (int y = 0; y < layer.OutDim; y += layer.Stride) {
+                for (int x = 0; x < layer.OutWidth; x += layer.Stride) {
+                    for (int y = 0; y < layer.OutWidth; y += layer.Stride) {
                         int inX = x + kHalf;
                         int inY = y + kHalf;
 
@@ -119,7 +114,7 @@ namespace NNBurst {
                                 for (int kY = -kHalf; kY <= kHalf; kY++) {
 
                                     // Do a dot product
-                                    int inIdx = (inY + kY) * layer.InDim + (inX + kX);
+                                    int inIdx = (inY + kY) * layer.InWidth + (inX + kX);
                                     int kernIdx = layer.KWidth * (kHalf + kY) + (kHalf + kX);
 
                                     a += input[inIdx] * fSlice[kernIdx];
@@ -128,7 +123,7 @@ namespace NNBurst {
                         }
                         
 
-                        output[y * layer.OutDim + x] = a;
+                        output[y * layer.OutWidth + x] = a;
                     }
                 }
             }
@@ -140,7 +135,7 @@ namespace NNBurst {
         public ConvLayer2D layer;
 
         public void Execute() {
-            var outDim = layer.OutDim;
+            var outDim = layer.OutWidth;
 
             int kHalf = layer.KWidth / 2;
 

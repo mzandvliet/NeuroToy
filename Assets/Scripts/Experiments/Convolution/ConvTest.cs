@@ -54,12 +54,12 @@ public class ConvTest : MonoBehaviour {
 
         var l1 = ConvLayer2D.Create(imgSize, imgDepth, 7, 16, 1, 0).Value;
         _layers.Add(l1);
-        var l2 = ConvLayer2D.Create(l1.OutDim, l1.NumFilters, 5, 8, 1, 0).Value;
+        var l2 = ConvLayer2D.Create(l1.OutWidth, l1.NumFilters, 5, 8, 1, 0).Value;
         _layers.Add(l2);
-        var l3 = ConvLayer2D.Create(l2.OutDim, l2.NumFilters, 3, 4, 1, 0).Value;
+        var l3 = ConvLayer2D.Create(l2.OutWidth, l2.NumFilters, 3, 4, 1, 0).Value;
         _layers.Add(l3);
 
-        int convOutCount = l2.OutDim * l2.OutDim * l2.NumFilters;
+        int convOutCount = l2.OutWidth * l2.OutWidth * l2.NumFilters;
         Debug.Log("Conv out neuron count: " + convOutCount);
 
         _fcLayer = new NativeNetworkLayer(10, convOutCount);
@@ -67,12 +67,12 @@ public class ConvTest : MonoBehaviour {
         // Parameter initialization
 
         for (int i = 0; i < _layers.Count; i++) {
-            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 0.2f);
-            NeuralMath.RandomGaussian(_random, _layers[i].Bias, 0f, 0.2f);
+            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 0.1f);
+            NeuralMath.RandomGaussian(_random, _layers[i].Bias, 0f, 0.1f);
         }
 
-        NeuralMath.RandomGaussian(_random, _fcLayer.Biases, 0f, 0.2f);
-        NeuralMath.RandomGaussian(_random, _fcLayer.Weights, 0f, 0.2f);
+        NeuralMath.RandomGaussian(_random, _fcLayer.Biases, 0f, 0.1f);
+        NeuralMath.RandomGaussian(_random, _fcLayer.Weights, 0f, 0.1f);
 
         // Forward pass
 
@@ -162,24 +162,30 @@ public class ConvTest : MonoBehaviour {
         }
     }
 
-    private static void DrawConv2DLayer(Conv2DLayerTexture layer, ref float y) {
-        float inSize = layer.Source.InDim * GUIConfig.imgScale;
-        float outSize = layer.Source.InDim * GUIConfig.imgScale;
-        float kSize = layer.Kernel[0].width * GUIConfig.kernScale;
+    private static void DrawConv2DLayer(Conv2DLayerTexture layerTex, ref float y) {
+        var layer = layerTex.Source;
 
-        for (int i = 0; i < layer.Kernel.Length; i++) {
-            GUI.DrawTexture(
-                new Rect(GUIConfig.marginX + outSize * i + 20f, y, kSize, kSize),
-                layer.Kernel[i],
-                ScaleMode.ScaleToFit);
+        float inSize = layer.InWidth * GUIConfig.imgScale;
+        float outSize = layer.InWidth * GUIConfig.imgScale;
+        float outPadSize = outSize + 2f;
+        float kSize = layerTex.KernTex[0].width * GUIConfig.kernScale;
+        float kPadSize = kSize + 2f;
+
+        for (int f = 0; f < layer.NumFilters; f++) {
+            for (int fs = 0; fs < layer.InDepth; fs++) {
+                GUI.DrawTexture(
+                    new Rect(GUIConfig.marginX + outPadSize * f, y + kPadSize * fs, kSize, kSize),
+                    layerTex.KernTex[f * layer.InDepth + fs],
+                    ScaleMode.ScaleToFit);
+            }
         }
 
-        y += kSize + GUIConfig.marginY;
+        y += kPadSize*layer.InDepth + GUIConfig.marginY;
 
-        for (int i = 0; i < layer.Activation.Length; i++) {
+        for (int i = 0; i < layerTex.ActTex.Length; i++) {
             GUI.DrawTexture(
-                new Rect(GUIConfig.marginX + outSize * i + 20f, y, outSize, outSize),
-                layer.Activation[i],
+                new Rect(GUIConfig.marginX + outPadSize * i, y, outSize, outSize),
+                layerTex.ActTex[i],
                 ScaleMode.ScaleToFit);
         }
 
@@ -191,7 +197,7 @@ public class ConvTest : MonoBehaviour {
         public const float marginY = 10f;
         public const float lblScaleY = 24f;
         public const float imgScale = 3f;
-        public const float kernScale = 8f;
+        public const float kernScale = 4f;
     }
 }
 
@@ -236,10 +242,12 @@ public static class TextureUtils {
     }
 
     // Todo: support for the multiple filter slices
-    public static void KernelToTexture(ConvLayer2D layer, int channel, Texture2D tex) {
+    public static void KernelToTexture(ConvLayer2D layer, int filter, int fslice, Texture2D tex) {
         var colors = new Color[layer.KWidth * layer.KWidth];
 
-        int start = layer.KWidth * layer.KWidth * channel;
+        int start = 
+            layer.KWidth * layer.KWidth * layer.InDepth * filter +
+            layer.KWidth * layer.KWidth * fslice;
 
         for (int y = 0; y < layer.KWidth; y++) {
             for (int x = 0; x < layer.KWidth; x++) {
@@ -259,20 +267,23 @@ public static class TextureUtils {
  */
 public class Conv2DLayerTexture {
     public ConvLayer2D Source;
-    public Texture2D[] Activation;
-    public Texture2D[] Kernel;
+    public Texture2D[] ActTex;
+    public Texture2D[] KernTex;
 
     public Conv2DLayerTexture(ConvLayer2D layer) {
         Source = layer;
 
-        Activation = TextureUtils.CreateTexture2DArray(layer.OutDim, layer.OutDim, layer.NumFilters);
+        ActTex = TextureUtils.CreateTexture2DArray(layer.OutWidth, layer.OutWidth, layer.NumFilters);
         for (int i = 0; i < layer.NumFilters; i++) {
-            TextureUtils.ActivationToTexture(layer.output, i, Activation[i]);
+            TextureUtils.ActivationToTexture(layer.output, i, ActTex[i]);
         }
 
-        Kernel = TextureUtils.CreateTexture2DArray(layer.KWidth, layer.KWidth, layer.NumFilters);
-        for (int i = 0; i < layer.NumFilters; i++) {
-            TextureUtils.KernelToTexture(layer, i, Kernel[i]);
+        KernTex = TextureUtils.CreateTexture2DArray(layer.KWidth, layer.KWidth, layer.NumFilters * layer.InDepth);
+
+        for (int f = 0; f < layer.NumFilters; f++) {
+            for (int fs = 0; fs < layer.InDepth; fs++) {
+                TextureUtils.KernelToTexture(layer, f, fs, KernTex[f * layer.InDepth + fs]);
+            }
         }
     }
 }
