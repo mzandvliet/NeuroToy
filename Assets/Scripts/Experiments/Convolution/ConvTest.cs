@@ -7,13 +7,17 @@ using NNBurst;
 
 /*
 
+Bug:
+
+- Setting stride to any value other than 1 glitches out the computation.
+
 Todo:
 
 - Sort out the channel/depth business
     - Input image is channels=1 for greyscale, channels=3 for RGB color
 
-- Stucture for a single conv layer
-    - Easy creation and wiring
+- Make a gizmo for easily configuring successive layers that have compatible
+parameters.
 
 - MaxPool, or AveragePool? (Fallen out of favor, can get by without it for now)
 
@@ -21,6 +25,13 @@ Todo:
 
 - Build a system that takes networks that are arbitrarily composed out of conv and FC layers
   and builds a SGD optimizer for it.
+
+- RGB is probably a poor sort of way to work with color
+- Pixel grids are probably a poor sort of way to do vision
+
+- Condider convolution with even-numbered kernel width?
+
+- Replace padding with dilation
 
  */
 
@@ -52,14 +63,14 @@ public class ConvTest : MonoBehaviour {
 
         _layers = new List<ConvLayer2D>();
 
-        var l1 = ConvLayer2D.Create(imgSize, imgDepth, 7, 16, 1, 0).Value;
+        var l1 = ConvLayer2D.Create(imgSize, imgDepth, 3, 1, 0, 16).Value;
         _layers.Add(l1);
-        var l2 = ConvLayer2D.Create(l1.OutWidth, l1.NumFilters, 5, 8, 1, 0).Value;
+        var l2 = ConvLayer2D.Create(l1.OutWidth, l1.NumFilters, 5, 1, 0, 8).Value;
         _layers.Add(l2);
-        var l3 = ConvLayer2D.Create(l2.OutWidth, l2.NumFilters, 3, 4, 1, 0).Value;
+        var l3 = ConvLayer2D.Create(l2.OutWidth, l2.NumFilters, 3, 1, 0, 4).Value;
         _layers.Add(l3);
 
-        int convOutCount = l2.OutWidth * l2.OutWidth * l2.NumFilters;
+        int convOutCount = l3.OutWidth * l3.OutWidth * l2.NumFilters;
         Debug.Log("Conv out neuron count: " + convOutCount);
 
         _fcLayer = new NativeNetworkLayer(10, convOutCount);
@@ -113,7 +124,7 @@ public class ConvTest : MonoBehaviour {
             cj.layer = _layers[i];
             h = cj.Schedule(h);
 
-            var bj = new AdddBias2DJob();
+            var bj = new AddBias2DJob();
             bj.layer = _layers[i];
             h = bj.Schedule(h);
 
@@ -134,7 +145,7 @@ public class ConvTest : MonoBehaviour {
         h = b.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);
 
         var d = new DotParallelJob();
-        d.Input = _layers[2].output;
+        d.Input = _layers[_layers.Count-1].output;
         d.Weights = _fcLayer.Weights;
         d.Output = _fcLayer.Outputs;
         h = d.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);

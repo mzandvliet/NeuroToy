@@ -97,6 +97,10 @@ namespace NNBurst {
             return Unity.Mathematics.math.sqrt(sum);
         }
 
+        public static bool IsEven(float x) {
+            return frac(x / 2f) < 0.01f;
+        }
+
         #endregion
     }
 

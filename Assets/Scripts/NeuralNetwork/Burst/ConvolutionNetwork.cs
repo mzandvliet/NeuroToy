@@ -20,26 +20,26 @@ namespace NNBurst {
         public NativeArray<float> Bias;
         public NativeArray<float> output;
 
-        public static ConvLayer2D? Create(int inDim, int inDepth, int size, int outDepth, int stride, int padding) {
-            int outDim = GetOutputSize(inDim, size, stride, padding);
-            if (outDim == -1) {
-                Debug.LogError("Cannot perform convolution with this kernel, output dimensions ill defined");
+        public static ConvLayer2D? Create(int inWidth, int inDepth, int kernWidth, int stride, int padding, int numFilters) {
+            int outWidth = GetOutputWidth(inWidth, kernWidth, stride, padding);
+            if (outWidth == -1) {
+                Debug.LogError("Cannot perform convolution with this kernel, it is ill defined");
                 return null;
             }
-            return new ConvLayer2D(inDim, inDepth, outDim, size, outDepth, stride, padding);
+            return new ConvLayer2D(inWidth, inDepth, outWidth, kernWidth, stride, padding, numFilters);
         }        
 
-        private ConvLayer2D(int inDim, int inDepth, int outDim, int size, int outDepth, int stride, int padding) {
-            InWidth = inDim;
+        private ConvLayer2D(int inWidth, int inDepth, int outWidth, int kernWidth, int stride, int padding, int numFilters) {
+            InWidth = inWidth;
             InDepth = inDepth;
-            OutWidth = outDim;
-            KWidth = size;
-            NumFilters = outDepth;
+            OutWidth = outWidth;
+            KWidth = kernWidth;
             Stride = stride;
             Padding = padding;
-            Kernel = new NativeArray<float>(size * size * inDepth * outDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            Bias = new NativeArray<float>(outDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            output = new NativeArray<float>(outDim * outDim * outDepth, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            NumFilters = numFilters;
+            Kernel = new NativeArray<float>(kernWidth * kernWidth * inDepth * numFilters, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Bias = new NativeArray<float>(numFilters, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            output = new NativeArray<float>(outWidth * outWidth * numFilters, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         }
 
         public void Dispose() {
@@ -48,8 +48,13 @@ namespace NNBurst {
             output.Dispose();
         }
 
-        private static int GetOutputSize(int inDim, int size, int stride, int padding) {
-            float result = (inDim - size + padding * 2.0f) / (float)stride + 1.0f;
+        // Todo: show to user all possible integer solutions, given partially filled config
+        public static int GetOutputWidth(int inWidth, int kernelWidth, int stride, int padding) {
+            if (NeuralMath.IsEven(kernelWidth)) {
+                return -1;
+            }
+
+            float result = (inWidth - kernelWidth + padding * 2.0f) / (float)stride + 1.0f;
             if (result - (int)result < float.Epsilon) {
                 return (int)result;
             }
@@ -61,30 +66,6 @@ namespace NNBurst {
     public struct Conv2DJob : IJob {
         [ReadOnly] public NativeArray<float> input;
         public ConvLayer2D layer;
-
-        /* 
-        Todo: pass kernel over all input depth, since we now have
-        separate weights for all n input depths.
-
-        This means an additional inner loop over depthIn
-
-        First, we need an easier way to address the data.
-        It's all still dot products between vector subspaces.
-        Find a few ways to make those way nicer to write.
-
-        Slices are one way to make this nicer, since they at least
-        encapsulate some addressing. This helps separate color
-        channels, filter depth channels, whatever.
-
-        Next, we want to have easier n-dimensional euclidean
-        structure indexing.
-
-        We could use functions to make this clearer, which compile
-        to inlined code.
-
-        Perhaps we can take the NativeSlice code and create our own
-        EuclideanNativeSlice thing.
-        */
 
         public void Execute() {
             var outSize = layer.OutWidth * layer.OutWidth;
@@ -131,7 +112,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct AdddBias2DJob : IJob {
+    public struct AddBias2DJob : IJob {
         public ConvLayer2D layer;
 
         public void Execute() {
