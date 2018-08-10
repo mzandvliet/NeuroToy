@@ -5,6 +5,9 @@ using UnityEngine;
 using Unity.Burst;
 
 /* Todo:
+Always flush schedule batches
+When you want your jobs to start, you need to flush the scheduled batch with JobHandle.ScheduleBatchedJobs. Not doing this delays the scheduling until another job waits for the result.
+
 - Reference types not allowed in jobs, so we can't pass along a System.Random instance.
 So immediately we get to the interesting challenge of generating random numbers for Burst.
 
