@@ -48,7 +48,7 @@ namespace NNBurst {
             output.Dispose();
         }
 
-        // Todo: show to user all possible integer solutions, given partially filled config
+        // Todo: show user all possible integer solutions, given partially filled config
         public static int GetOutputWidth(int inWidth, int kernelWidth, int stride, int padding) {
             if (NeuralMath.IsEven(kernelWidth)) {
                 return -1;
@@ -62,6 +62,10 @@ namespace NNBurst {
         }
     }
 
+    /*  
+        Todo: split up into less monolithic functions
+        Can do parallelism per filter slice, for example.
+     */
     [BurstCompile]
     public struct Conv2DJob : IJob {
         [ReadOnly] public NativeArray<float> input;
@@ -74,37 +78,38 @@ namespace NNBurst {
 
             // For all filters
             for (int f = 0; f < layer.NumFilters; f++) {
-                var output = layer.output.Slice(outSize * f, outSize); // Subset of memory corresponding to output for filter
+                // Subset of memory corresponding to output for filter
+                var output = layer.output.Slice(f * outSize, outSize);
 
-                int filterSpan = kSize * layer.InDepth; // Size of a single filter in memory
-                var filter = layer.Kernel.Slice(filterSpan * f, filterSpan);
+                // Subset of memory corresponding to filter (with separate
+                // values for each depth slice of the input
+                int filterSpan = kSize * layer.InDepth; 
+                var filter = layer.Kernel.Slice(f * filterSpan, filterSpan);
 
                 // For all pixels in the output
-                for (int x = 0; x < layer.OutWidth; x += layer.Stride) {
-                    for (int y = 0; y < layer.OutWidth; y += layer.Stride) {
-                        int inX = x + kHalf;
-                        int inY = y + kHalf;
+                for (int x = 0; x < layer.OutWidth; x++) {
+                    for (int y = 0; y < layer.OutWidth; y++) {
+                        int inX = kHalf + x * layer.Stride;
+                        int inY = kHalf + y * layer.Stride;
 
-                        float a = 0f;
+                        float act = 0f;
 
                         // For all depth slices in this filter
                         for (int fS = 0; fS < layer.InDepth; fS++) {
-                            var fSlice = filter.Slice(kSize * fS);
+                            var fSlice = filter.Slice(fS * kSize, kSize);
 
+                            // Dot product with kernel
                             for (int kX = -kHalf; kX <= kHalf; kX++) {
                                 for (int kY = -kHalf; kY <= kHalf; kY++) {
-
-                                    // Do a dot product
                                     int inIdx = (inY + kY) * layer.InWidth + (inX + kX);
                                     int kernIdx = layer.KWidth * (kHalf + kY) + (kHalf + kX);
 
-                                    a += input[inIdx] * fSlice[kernIdx];
+                                    act += input[inIdx] * fSlice[kernIdx];
                                 }
                             }
                         }
-                        
 
-                        output[y * layer.OutWidth + x] = a;
+                        output[y * layer.OutWidth + x] = act;
                     }
                 }
             }
@@ -116,12 +121,10 @@ namespace NNBurst {
         public ConvLayer2D layer;
 
         public void Execute() {
-            var outDim = layer.OutWidth;
-
-            int kHalf = layer.KWidth / 2;
+            var outSize = layer.OutWidth * layer.OutWidth;
 
             for (int c = 0; c < layer.NumFilters; c++) {
-                var o = layer.output.Slice(outDim * outDim * c, outDim * outDim);
+                var o = layer.output.Slice(outSize * c, outSize);
 
                 for (int i = 0; i < o.Length; i++) {
                     o[i] += layer.Bias[c];

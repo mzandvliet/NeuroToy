@@ -39,6 +39,7 @@ public class ConvTest : MonoBehaviour {
     private IList<ConvLayer2D> _layers;
     private NativeNetworkLayer _fcLayer;
 
+    private NativeArray<float> _img;
     private int _imgLabel;
     private Texture2D _imgTex;
     
@@ -47,30 +48,26 @@ public class ConvTest : MonoBehaviour {
     private System.Random _random;
     
     private void Awake() {
-        _random = new System.Random();
+        _random = new System.Random(12345);
 
         DataManager.Load();
 
         const int imgSize = 28;
         const int imgDepth = 1; // 3 for RGB
-        var img = new NativeArray<float>(imgSize * imgSize, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-
-        const int imgIdx = 23545;
-        _imgLabel = DataManager.Train.Labels[imgIdx];
-        var h = NeuralJobs.CopyInput(img, DataManager.Train, imgIdx);
+        _img = new NativeArray<float>(imgSize * imgSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
 
         // Create convolution layers
 
         _layers = new List<ConvLayer2D>();
-
         var l1 = ConvLayer2D.Create(imgSize, imgDepth, 3, 1, 0, 16).Value;
         _layers.Add(l1);
-        var l2 = ConvLayer2D.Create(l1.OutWidth, l1.NumFilters, 5, 1, 0, 8).Value;
+        var l2 = ConvLayer2D.Create(l1.OutWidth, l1.NumFilters, 5, 3, 0, 8).Value;
         _layers.Add(l2);
         var l3 = ConvLayer2D.Create(l2.OutWidth, l2.NumFilters, 3, 1, 0, 4).Value;
         _layers.Add(l3);
 
-        int convOutCount = l3.OutWidth * l3.OutWidth * l2.NumFilters;
+        var last = l3;
+        int convOutCount = last.OutWidth * last.OutWidth * last.NumFilters;
         Debug.Log("Conv out neuron count: " + convOutCount);
 
         _fcLayer = new NativeNetworkLayer(10, convOutCount);
@@ -78,40 +75,54 @@ public class ConvTest : MonoBehaviour {
         // Parameter initialization
 
         for (int i = 0; i < _layers.Count; i++) {
-            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 0.1f);
+            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 0.25f);
             NeuralMath.RandomGaussian(_random, _layers[i].Bias, 0f, 0.1f);
         }
 
         NeuralMath.RandomGaussian(_random, _fcLayer.Biases, 0f, 0.1f);
         NeuralMath.RandomGaussian(_random, _fcLayer.Weights, 0f, 0.1f);
 
-        // Forward pass
-
-        h = ScheduleForward(img, _layers, _fcLayer, h);
-        h.Complete();
-
-        int predictedLbl = NeuralMath.ArgMax(_fcLayer.Outputs);
-        Debug.Log("Prediction: " + predictedLbl);
-
         // Create debug textures
 
         _imgTex = new Texture2D(imgSize, imgSize, TextureFormat.ARGB32, false, true);
         _imgTex.filterMode = FilterMode.Point;
-        TextureUtils.ImgToTexture(img, _imgTex);
 
         _layerTex = new List<Conv2DLayerTexture>(_layers.Count);
         for (int i = 0; i < _layers.Count; i++) {
             _layerTex.Add(new Conv2DLayerTexture(_layers[i]));
         }
+    }
 
-        // Clean up
+    private void Start() {
+        Train();
 
+        for (int i = 0; i < _layerTex.Count; i++) {
+            _layerTex[i].Update();
+        }
+    }
+
+    private void OnDestroy() {
         for (int i = 0; i < _layers.Count; i++) {
             _layers[i].Dispose();
         }
         _fcLayer.Dispose();
-        img.Dispose();
+        _img.Dispose();
+
         DataManager.Unload();
+    }
+
+    private void Train() {
+        const int imgIdx = 23545;
+        _imgLabel = DataManager.Train.Labels[imgIdx];
+        var h = NeuralJobs.CopyInput(_img, DataManager.Train, imgIdx);
+
+        h = ScheduleForward(_img, _layers, _fcLayer, h);
+        h.Complete();
+
+        int predictedLbl = NeuralMath.ArgMax(_fcLayer.Outputs);
+        Debug.Log("Prediction: " + predictedLbl);
+
+        TextureUtils.ImgToTexture(_img, _imgTex);
     }
 
     private static JobHandle ScheduleForward(NativeArray<float> img, IList<ConvLayer2D> _layers, NativeNetworkLayer _fcLayer, JobHandle h) {
@@ -158,6 +169,8 @@ public class ConvTest : MonoBehaviour {
     }
 
     private void OnGUI() {
+        GUI.color = Color.white;
+
         float y = 32f;
 
         float imgSize = 28 * GUIConfig.imgScale;
@@ -174,12 +187,12 @@ public class ConvTest : MonoBehaviour {
     }
 
     private static void DrawConv2DLayer(Conv2DLayerTexture layerTex, ref float y) {
-        var layer = layerTex.Source;
+        var layer = layerTex.Layer;
 
         float inSize = layer.InWidth * GUIConfig.imgScale;
-        float outSize = layer.InWidth * GUIConfig.imgScale;
+        float outSize = 64f; // layer.InWidth * GUIConfig.imgScale
         float outPadSize = outSize + 2f;
-        float kSize = layerTex.KernTex[0].width * GUIConfig.kernScale;
+        float kSize = 32f;
         float kPadSize = kSize + 2f;
 
         for (int f = 0; f < layer.NumFilters; f++) {
@@ -208,7 +221,7 @@ public class ConvTest : MonoBehaviour {
         public const float marginY = 10f;
         public const float lblScaleY = 24f;
         public const float imgScale = 3f;
-        public const float kernScale = 4f;
+        public const float kernScale = 32f;
     }
 }
 
@@ -277,23 +290,24 @@ public static class TextureUtils {
  - Use this, it's perfect for this case: https://docs.unity3d.com/ScriptReference/Texture2DArray.html
  */
 public class Conv2DLayerTexture {
-    public ConvLayer2D Source;
+    public ConvLayer2D Layer;
     public Texture2D[] ActTex;
     public Texture2D[] KernTex;
 
     public Conv2DLayerTexture(ConvLayer2D layer) {
-        Source = layer;
-
+        Layer = layer;
         ActTex = TextureUtils.CreateTexture2DArray(layer.OutWidth, layer.OutWidth, layer.NumFilters);
-        for (int i = 0; i < layer.NumFilters; i++) {
-            TextureUtils.ActivationToTexture(layer.output, i, ActTex[i]);
+        KernTex = TextureUtils.CreateTexture2DArray(layer.KWidth, layer.KWidth, layer.NumFilters * layer.InDepth);
+    }
+
+    public void Update() {
+        for (int i = 0; i < Layer.NumFilters; i++) {
+            TextureUtils.ActivationToTexture(Layer.output, i, ActTex[i]);
         }
 
-        KernTex = TextureUtils.CreateTexture2DArray(layer.KWidth, layer.KWidth, layer.NumFilters * layer.InDepth);
-
-        for (int f = 0; f < layer.NumFilters; f++) {
-            for (int fs = 0; fs < layer.InDepth; fs++) {
-                TextureUtils.KernelToTexture(layer, f, fs, KernTex[f * layer.InDepth + fs]);
+        for (int f = 0; f < Layer.NumFilters; f++) {
+            for (int fs = 0; fs < Layer.InDepth; fs++) {
+                TextureUtils.KernelToTexture(Layer, f, fs, KernTex[f * Layer.InDepth + fs]);
             }
         }
     }
