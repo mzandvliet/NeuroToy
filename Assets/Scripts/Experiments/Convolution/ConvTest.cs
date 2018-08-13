@@ -37,7 +37,7 @@ parameters.
 
 public class ConvTest : MonoBehaviour {
     private IList<ConvLayer2D> _layers;
-    private FCNetworkLayer _fcLayer;
+    private FCLayer _fcLayer;
 
     private IList<Conv2DLayerTexture> _layerTex;
 
@@ -78,7 +78,7 @@ public class ConvTest : MonoBehaviour {
         int convOutCount = last.OutWidth * last.OutWidth * last.NumFilters;
         Debug.Log("Conv out neuron count: " + convOutCount);
 
-        _fcLayer = new FCNetworkLayer(10, convOutCount);
+        _fcLayer = new FCLayer(10, convOutCount);
 
         // Parameter initialization
 
@@ -171,7 +171,7 @@ public class ConvTest : MonoBehaviour {
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
-    private static JobHandle ForwardPass(NativeArray<float> img, IList<ConvLayer2D> _layers, FCNetworkLayer _fcLayer, JobHandle h) {
+    private static JobHandle ForwardPass(NativeArray<float> img, IList<ConvLayer2D> _layers, FCLayer _fcLayer, JobHandle h) {
         // Convolution layers
 
         var input = img;

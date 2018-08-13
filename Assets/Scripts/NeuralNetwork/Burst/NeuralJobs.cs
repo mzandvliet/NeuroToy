@@ -157,35 +157,45 @@ namespace NNBurst {
         public static JobHandle BackwardsPass(FCNetwork net, FCGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle = new JobHandle()) {
             JobHandle h = handle;
 
-            // Todo: make separate jobs for updating DCDZ and DCDW
-            // DCDW can make good use of ParallelFor, but depends on DCDZ
+            // Todo: 
+            // DCDW can make good use of ParallelFor, depends on DCDZ
             // Oh, but then, while DCDW for layer L is being calculated, DCDZ for L-1 can calculate while DCDW of L is calculating
+            // DCDW computation is an orphan. Other computation doesn't have to wait for it.
 
-            var subtractJob = new SubtractJob();
-            subtractJob.A = net.Last.Outputs;
-            subtractJob.B = target;
-            subtractJob.Output = gradients.DCDO;
-            h = subtractJob.Schedule(h);
+            var sj = new SubtractJob();
+            sj.A = net.Last.Outputs;
+            sj.B = target;
+            sj.Output = gradients.DCDO;
+            h = sj.Schedule(h);
 
-            var backwardsFinalJob = new BackPropFinalJob();
-            backwardsFinalJob.DCDO = gradients.DCDO;
-            backwardsFinalJob.DCDZ = gradients.Last.DCDZ;
-            backwardsFinalJob.DCDW = gradients.Last.DCDW;
-            backwardsFinalJob.Outputs = net.Last.Outputs;
-            backwardsFinalJob.OutputsPrev = net.Layers[net.Layers.Length - 2].Outputs;
-            h = backwardsFinalJob.Schedule(h);
+            var bfj = new BackPropOutputJob();
+            bfj.DCDZNext = gradients.DCDO;
+            bfj.DCDZ = gradients.Last.DCDZ;
+            bfj.Outputs = net.Last.Outputs;
+            h = bfj.Schedule(h);
+
+            var bwj = new BackPropWeightsJob();
+            bwj.DCDZ = gradients.Last.DCDZ;
+            bwj.DCDW = gradients.Last.DCDW;
+            bwj.Outputs = net.Last.Outputs;
+            bwj.OutputsPrev = net.Layers[net.Layers.Length - 2].Outputs;
+            h = bwj.Schedule(h);
 
             // Note, indexing using net.layers.length here is misleading, since that count is one less than if you include input layer
             for (int l = net.Layers.Length - 2; l >= 0; l--) {
-                var backwardsJob = new BackPropJob();
-                backwardsJob.DCDZNext = gradients.Layers[l + 1].DCDZ;
-                backwardsJob.WeightsNext = net.Layers[l + 1].Weights;
-                backwardsJob.DCDZ = gradients.Layers[l].DCDZ;
-                backwardsJob.DCDW = gradients.Layers[l].DCDW;
-                backwardsJob.LOutputs = net.Layers[l].Outputs;
-                backwardsJob.OutputsPrev = l == 0 ? input : net.Layers[l - 1].Outputs;
-                h = backwardsJob.Schedule(h);
-                // h = backwardsJob.Schedule(gradients.Layers[l].NumNeurons, gradients.Layers[l].NumNeurons/8, h);
+                var bej = new BackPropErrorJob();
+                bej.DCDZNext = gradients.Layers[l + 1].DCDZ;
+                bej.WeightsNext = net.Layers[l + 1].Weights;
+                bej.DCDZ = gradients.Layers[l].DCDZ;
+                bej.Outputs = net.Layers[l].Outputs;
+                h = bej.Schedule(h);
+
+                bwj = new BackPropWeightsJob();
+                bwj.DCDZ = gradients.Layers[l].DCDZ;
+                bwj.DCDW = gradients.Layers[l].DCDW;
+                bwj.Outputs = net.Layers[l].Outputs;
+                bwj.OutputsPrev = l == 0 ? input : net.Layers[l - 1].Outputs;
+                h = bwj.Schedule(h);
             }
 
             return h;
@@ -434,42 +444,32 @@ namespace NNBurst {
         }
     }
 
-    // Todo: The way backwards passes are written needs lots of restructuring
-    // First, the index juggling needs to be made more readable. Like indexing
-    // the higher layer's weight matrix is a mess right now.
     [BurstCompile]
-    public struct BackPropFinalJob : IJob {
-        [ReadOnly] public NativeArray<float> DCDO;
+    public struct BackPropOutputJob : IJob {
+        [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> Outputs;
-        [ReadOnly] public NativeArray<float> OutputsPrev;
         [WriteOnly] public NativeArray<float> DCDZ;
-        [WriteOnly] public NativeArray<float> DCDW;
 
         public void Execute() {
             for (int n = 0; n < Outputs.Length; n++) {
-                float dOdZ = NeuralMath.SigmoidPrime(Outputs[n]); // Reuses forward pass evaluation of act(z)
-                float dcdzn = DCDO[n] * dOdZ;
+                float dOdZ = NeuralMath.SigmoidPrime(Outputs[n]);
+                
+                float dcdzn = DCDZNext[n] * dOdZ;
                 DCDZ[n] = dcdzn;
-
-                for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * OutputsPrev.Length + w] = dcdzn * OutputsPrev[w];
-                }
             }
         }
     }
 
     [BurstCompile]
-    public struct BackPropJob : IJob {
+    public struct BackPropErrorJob : IJob {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> WeightsNext;
-        [ReadOnly] public NativeArray<float> OutputsPrev;
-        [ReadOnly] public NativeArray<float> LOutputs;
+        [ReadOnly] public NativeArray<float> Outputs;
         [WriteOnly] public NativeArray<float> DCDZ;
-        [WriteOnly] public NativeArray<float> DCDW;
 
         public void Execute() {
-            for (int n = 0; n < LOutputs.Length; n++) {
-                float dOdZ = NeuralMath.SigmoidPrime(LOutputs[n]);
+            for (int n = 0; n < Outputs.Length; n++) {
+                float dOdZ = NeuralMath.SigmoidPrime(Outputs[n]);
 
                 float dcdzn = 0f;
                 for (int nNext = 0; nNext < DCDZNext.Length; nNext++) {
@@ -477,11 +477,22 @@ namespace NNBurst {
                 }
                 dcdzn *= dOdZ;
                 DCDZ[n] = dcdzn;
+            }
+        }
+    }
 
-                // Todo: how do we parallelize over the weights?
-                // If we try to ParallelFor, compiler complains that we're writing out of bounds
+    // Note: should run after calculation of DCDZ
+    [BurstCompile]
+    public struct BackPropWeightsJob : IJob {
+        [ReadOnly] public NativeArray<float> OutputsPrev;
+        [ReadOnly] public NativeArray<float> Outputs;
+        [ReadOnly] public NativeArray<float> DCDZ;
+        [WriteOnly] public NativeArray<float> DCDW;
+
+        public void Execute() {
+            for (int n = 0; n < Outputs.Length; n++) {
                 for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * OutputsPrev.Length + w] = dcdzn * OutputsPrev[w];
+                    DCDW[n * OutputsPrev.Length + w] = DCDZ[n] * OutputsPrev[w];
                 }
             }
         }
