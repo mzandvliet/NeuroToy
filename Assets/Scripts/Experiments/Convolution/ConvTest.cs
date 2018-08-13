@@ -39,13 +39,26 @@ public class ConvTest : MonoBehaviour {
     private IList<ConvLayer2D> _layers;
     private NativeNetworkLayer _fcLayer;
 
-    private NativeArray<float> _img;
-    private int _imgLabel;
-    private Texture2D _imgTex;
+    // private NativeArray<float> _img;
+    // private int _imgLabel;
+    // private Texture2D _imgTex;
     
     private IList<Conv2DLayerTexture> _layerTex;
 
     private System.Random _random;
+
+    private NativeArray<int> _batch;
+    NativeArray<float> _targetOutputs;
+    NativeArray<float> _dCdO;
+    NativeArray<float> _input;
+
+    int _epochCount;
+    int _batchCount;
+    float _trainingLoss;
+    float _rate;
+
+    const int OutputClassCount = 10;
+    const int BatchSize = 10;
     
     private void Awake() {
         _random = new System.Random(12345);
@@ -54,7 +67,7 @@ public class ConvTest : MonoBehaviour {
 
         const int imgSize = 28;
         const int imgDepth = 1; // 3 for RGB
-        _img = new NativeArray<float>(imgSize * imgSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        // _img = new NativeArray<float>(imgSize * imgSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
 
         // Create convolution layers
 
@@ -84,21 +97,30 @@ public class ConvTest : MonoBehaviour {
 
         // Create debug textures
 
-        _imgTex = new Texture2D(imgSize, imgSize, TextureFormat.ARGB32, false, true);
-        _imgTex.filterMode = FilterMode.Point;
+        // _imgTex = new Texture2D(imgSize, imgSize, TextureFormat.ARGB32, false, true);
+        // _imgTex.filterMode = FilterMode.Point;
 
         _layerTex = new List<Conv2DLayerTexture>(_layers.Count);
         for (int i = 0; i < _layers.Count; i++) {
             _layerTex.Add(new Conv2DLayerTexture(_layers[i]));
         }
+
+        // Create the training structure
+
+        _batch = new NativeArray<int>(BatchSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        _dCdO = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        _input = new NativeArray<float>(DataManager.Test.ImgDims, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
     }
 
     private void Start() {
-        Train();
+        TrainMinibatch();
 
         for (int i = 0; i < _layerTex.Count; i++) {
             _layerTex[i].Update();
         }
+
+        //TextureUtils.ImgToTexture(_img, _imgTex);
     }
 
     private void OnDestroy() {
@@ -106,26 +128,62 @@ public class ConvTest : MonoBehaviour {
             _layers[i].Dispose();
         }
         _fcLayer.Dispose();
-        _img.Dispose();
+
+        // _img.Dispose();
+
+        _batch.Dispose();
+        _targetOutputs.Dispose();
+        _dCdO.Dispose();
+        _input.Dispose();
 
         DataManager.Unload();
     }
 
-    private void Train() {
-        const int imgIdx = 23545;
-        _imgLabel = DataManager.Train.Labels[imgIdx];
-        var h = NeuralJobs.CopyInput(_img, DataManager.Train, imgIdx);
+    private void TrainMinibatch() {
+        UnityEngine.Profiling.Profiler.BeginSample("TrainMiniBatch");
 
-        h = ScheduleForward(_img, _layers, _fcLayer, h);
-        h.Complete();
+        float avgTrainCost = 0f;
 
-        int predictedLbl = NeuralMath.ArgMax(_fcLayer.Outputs);
-        Debug.Log("Prediction: " + predictedLbl);
+        DataManager.GetBatch(_batch, DataManager.Train, _random);
 
-        TextureUtils.ImgToTexture(_img, _imgTex);
+        // var handle = NeuralJobs.ZeroGradients(_gradientsAvg);
+        var handle = new JobHandle();
+
+        for (int i = 0; i < _batch.Length; i++) {
+            handle = NeuralJobs.CopyInput(_input, DataManager.Train, _batch[i], handle);
+            handle = ForwardPass(_input, _layers, _fcLayer, handle);
+
+            int lbl = (int)DataManager.Train.Labels[_batch[i]];
+            handle.Complete();
+            NeuralMath.ClassToOneHot(lbl, _targetOutputs); // Todo: job
+
+            // handle = NeuralJobs.BackwardsPass(_net, _gradients, _inputs, _targetOutputs, handle);
+            // handle = NeuralJobs.AddGradients(_gradients, _gradientsAvg, handle);
+            handle.Complete();
+
+            // Todo: backwards pass logic now does this, don't redo, just check
+            NeuralMath.Subtract(_targetOutputs, _fcLayer.Outputs, _dCdO);
+            float cost = NeuralMath.Cost(_dCdO);
+            avgTrainCost += cost;
+
+            int predictedLbl = NeuralMath.ArgMax(_fcLayer.Outputs);
+            Debug.Log("Prediction: " + predictedLbl);
+        }
+
+        // Update weights and biases according to averaged gradient and learning rate
+        _rate = 3.0f / (float)BatchSize;
+        // handle = NeuralJobs.UpdateParameters(_net, _gradientsAvg, _rate, handle);
+        handle.Complete(); // Todo: Is this one needed?
+
+        _batchCount++;
+
+        avgTrainCost /= (float)BatchSize;
+        _trainingLoss = (float)System.Math.Round(avgTrainCost, 6);
+
+        UnityEngine.Profiling.Profiler.EndSample();
     }
 
-    private static JobHandle ScheduleForward(NativeArray<float> img, IList<ConvLayer2D> _layers, NativeNetworkLayer _fcLayer, JobHandle h) {
+    private static JobHandle ForwardPass(NativeArray<float> img, IList<ConvLayer2D> _layers, NativeNetworkLayer _fcLayer, JobHandle h) {
         // Convolution layers
 
         var input = img;
@@ -169,21 +227,28 @@ public class ConvTest : MonoBehaviour {
     }
 
     private void OnGUI() {
-        GUI.color = Color.white;
-
         float y = 32f;
-
         float imgSize = 28 * GUIConfig.imgScale;
 
-        GUI.Label(new Rect(GUIConfig.marginX, y, imgSize, GUIConfig.lblScaleY), "Label: " + _imgLabel);
-        y += GUIConfig.lblScaleY + GUIConfig.marginY;
+        // GUI.Label(new Rect(GUIConfig.marginX, y, imgSize, GUIConfig.lblScaleY), "Label: " + _imgLabel);
+        // y += GUIConfig.lblScaleY + GUIConfig.marginY;
 
-        GUI.DrawTexture(new Rect(GUIConfig.marginX, y, imgSize, imgSize), _imgTex, ScaleMode.ScaleToFit);
-        y += imgSize + GUIConfig.marginY;
+        // GUI.DrawTexture(new Rect(GUIConfig.marginX, y, imgSize, imgSize), _imgTex, ScaleMode.ScaleToFit);
+        // y += imgSize + GUIConfig.marginY;
 
         for (int i = 0; i < _layerTex.Count; i++) {
             DrawConv2DLayer(_layerTex[i], ref y);
         }
+
+
+        GUILayout.BeginVertical(GUI.skin.box);
+        {
+            GUILayout.Label("Epoch: " + _epochCount);
+            GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.Train.Labels.Length / BatchSize));
+            GUILayout.Label("Train Loss: " + _trainingLoss);
+            GUILayout.Label("Rate: " + _rate);
+        }
+        GUILayout.EndVertical();
     }
 
     private static void DrawConv2DLayer(Conv2DLayerTexture layerTex, ref float y) {

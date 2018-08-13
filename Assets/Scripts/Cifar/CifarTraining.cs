@@ -57,8 +57,8 @@ namespace NNBurst {
 
             _gradients = new NativeGradients(config);
             _gradientsAvg = new NativeGradients(config);
+            
             _batch = new NativeArray<int>(BatchSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
-
             _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             _dCdO = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             _inputs = new NativeArray<float>(DataManager.Test.ImgDims * 3, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
