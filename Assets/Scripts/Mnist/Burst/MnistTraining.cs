@@ -15,9 +15,9 @@ namespace NNBurst {
 
         System.Random _random;
 
-        private NativeNetwork _net;
-        private NativeGradients _gradients;
-        private NativeGradients _gradientsAvg;
+        private FCNetwork _net;
+        private FCGradients _gradients;
+        private FCGradients _gradientsAvg;
 
         private NativeArray<int> _batch;
         NativeArray<float> _targetOutputs;
@@ -45,16 +45,16 @@ namespace NNBurst {
 
             _random = new System.Random();
 
-            var config = new NativeNetworkConfig();
-            config.Layers.Add(new NativeLayerConfig { Neurons = DataManager.Train.ImgDims });
-            config.Layers.Add(new NativeLayerConfig { Neurons = 30 });
-            config.Layers.Add(new NativeLayerConfig { Neurons = 10 });
+            var config = new FCNetworkConfig();
+            config.Layers.Add(new FCLayerConfig { Neurons = DataManager.Train.ImgDims });
+            config.Layers.Add(new FCLayerConfig { Neurons = 30 });
+            config.Layers.Add(new FCLayerConfig { Neurons = 10 });
 
-            _net = new NativeNetwork(config);
+            _net = new FCNetwork(config);
             NeuralUtils.Initialize(_net, _random);
 
-            _gradients = new NativeGradients(config);
-            _gradientsAvg = new NativeGradients(config);
+            _gradients = new FCGradients(config);
+            _gradientsAvg = new FCGradients(config);
             _batch = new NativeArray<int>(BatchSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
 
             _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);

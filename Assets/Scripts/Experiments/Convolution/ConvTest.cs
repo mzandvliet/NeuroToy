@@ -37,12 +37,8 @@ parameters.
 
 public class ConvTest : MonoBehaviour {
     private IList<ConvLayer2D> _layers;
-    private NativeNetworkLayer _fcLayer;
+    private FCNetworkLayer _fcLayer;
 
-    // private NativeArray<float> _img;
-    // private int _imgLabel;
-    // private Texture2D _imgTex;
-    
     private IList<Conv2DLayerTexture> _layerTex;
 
     private System.Random _random;
@@ -67,7 +63,6 @@ public class ConvTest : MonoBehaviour {
 
         const int imgSize = 28;
         const int imgDepth = 1; // 3 for RGB
-        // _img = new NativeArray<float>(imgSize * imgSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
 
         // Create convolution layers
 
@@ -83,7 +78,7 @@ public class ConvTest : MonoBehaviour {
         int convOutCount = last.OutWidth * last.OutWidth * last.NumFilters;
         Debug.Log("Conv out neuron count: " + convOutCount);
 
-        _fcLayer = new NativeNetworkLayer(10, convOutCount);
+        _fcLayer = new FCNetworkLayer(10, convOutCount);
 
         // Parameter initialization
 
@@ -96,9 +91,6 @@ public class ConvTest : MonoBehaviour {
         NeuralMath.RandomGaussian(_random, _fcLayer.Weights, 0f, 0.1f);
 
         // Create debug textures
-
-        // _imgTex = new Texture2D(imgSize, imgSize, TextureFormat.ARGB32, false, true);
-        // _imgTex.filterMode = FilterMode.Point;
 
         _layerTex = new List<Conv2DLayerTexture>(_layers.Count);
         for (int i = 0; i < _layers.Count; i++) {
@@ -119,8 +111,6 @@ public class ConvTest : MonoBehaviour {
         for (int i = 0; i < _layerTex.Count; i++) {
             _layerTex[i].Update();
         }
-
-        //TextureUtils.ImgToTexture(_img, _imgTex);
     }
 
     private void OnDestroy() {
@@ -128,8 +118,6 @@ public class ConvTest : MonoBehaviour {
             _layers[i].Dispose();
         }
         _fcLayer.Dispose();
-
-        // _img.Dispose();
 
         _batch.Dispose();
         _targetOutputs.Dispose();
@@ -183,7 +171,7 @@ public class ConvTest : MonoBehaviour {
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
-    private static JobHandle ForwardPass(NativeArray<float> img, IList<ConvLayer2D> _layers, NativeNetworkLayer _fcLayer, JobHandle h) {
+    private static JobHandle ForwardPass(NativeArray<float> img, IList<ConvLayer2D> _layers, FCNetworkLayer _fcLayer, JobHandle h) {
         // Convolution layers
 
         var input = img;
@@ -228,18 +216,10 @@ public class ConvTest : MonoBehaviour {
 
     private void OnGUI() {
         float y = 32f;
-        float imgSize = 28 * GUIConfig.imgScale;
-
-        // GUI.Label(new Rect(GUIConfig.marginX, y, imgSize, GUIConfig.lblScaleY), "Label: " + _imgLabel);
-        // y += GUIConfig.lblScaleY + GUIConfig.marginY;
-
-        // GUI.DrawTexture(new Rect(GUIConfig.marginX, y, imgSize, imgSize), _imgTex, ScaleMode.ScaleToFit);
-        // y += imgSize + GUIConfig.marginY;
 
         for (int i = 0; i < _layerTex.Count; i++) {
             DrawConv2DLayer(_layerTex[i], ref y);
         }
-
 
         GUILayout.BeginVertical(GUI.skin.box);
         {
@@ -255,7 +235,7 @@ public class ConvTest : MonoBehaviour {
         var layer = layerTex.Layer;
 
         float inSize = layer.InWidth * GUIConfig.imgScale;
-        float outSize = 64f; // layer.InWidth * GUIConfig.imgScale
+        float outSize = 64f;
         float outPadSize = outSize + 2f;
         float kSize = 32f;
         float kPadSize = kSize + 2f;

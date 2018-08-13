@@ -125,7 +125,7 @@ namespace NNBurst {
             return copyInputJob.Schedule(handle);
         }
 
-        public static JobHandle ForwardPass(NativeNetwork net, NativeArray<float> input, JobHandle handle = new JobHandle()) {
+        public static JobHandle ForwardPass(FCNetwork net, NativeArray<float> input, JobHandle handle = new JobHandle()) {
             NativeArray<float> last = input;
 
             for (int l = 0; l < net.Layers.Length; l++) {
@@ -154,7 +154,7 @@ namespace NNBurst {
             return handle;
         }
 
-        public static JobHandle BackwardsPass(NativeNetwork net, NativeGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle = new JobHandle()) {
+        public static JobHandle BackwardsPass(FCNetwork net, FCGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle = new JobHandle()) {
             JobHandle h = handle;
 
             // Todo: make separate jobs for updating DCDZ and DCDW
@@ -191,7 +191,7 @@ namespace NNBurst {
             return h;
         }
 
-        public static JobHandle ZeroGradients(NativeGradients gradients, JobHandle handle = new JobHandle()) {
+        public static JobHandle ZeroGradients(FCGradients gradients, JobHandle handle = new JobHandle()) {
             // Todo: parallelize over all these independent calculations
             for (int l = 0; l < gradients.Layers.Length; l++) {
                 var setBiasJob = new SetValueJob();
@@ -210,7 +210,7 @@ namespace NNBurst {
             return handle;
         }
 
-        public static JobHandle AddGradients(NativeGradients from, NativeGradients to, JobHandle handle = new JobHandle()) {
+        public static JobHandle AddGradients(FCGradients from, FCGradients to, JobHandle handle = new JobHandle()) {
             // Todo: parallelize over layers and/or biases/weights
             for (int l = 0; l < from.Layers.Length; l++) {
                 var addBiasJob = new AddAssignJob();
@@ -227,7 +227,7 @@ namespace NNBurst {
             return handle;
         }
 
-        public static JobHandle UpdateParameters(NativeNetwork net, NativeGradients gradients, float rate, JobHandle handle = new JobHandle()) {
+        public static JobHandle UpdateParameters(FCNetwork net, FCGradients gradients, float rate, JobHandle handle = new JobHandle()) {
             // Todo: Find a nice way to fold the multiply by learning rate and addition together in one pass over the data
             // Also, parallelize over all the arrays
 
