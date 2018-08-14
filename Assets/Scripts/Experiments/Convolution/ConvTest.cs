@@ -134,20 +134,21 @@ public class ConvTest : MonoBehaviour {
 
         DataManager.GetBatch(_batch, DataManager.Train, _random);
 
-        // var handle = NeuralJobs.ZeroGradients(_gradientsAvg);
-        var handle = new JobHandle();
+        // var h = NeuralJobs.ZeroGradients(_gradientsAvg);
+        var h = new JobHandle();
 
         for (int i = 0; i < _batch.Length; i++) {
-            handle = NeuralJobs.CopyInput(_input, DataManager.Train, _batch[i], handle);
-            handle = ForwardPass(_input, _layers, _fcLayer, handle);
+            h = NeuralJobs.CopyInput(_input, DataManager.Train, _batch[i], h);
+            h = ConvolutionJobs.ForwardPass(_input, _layers, h);
+            h = ConvolutionJobs.ForwardPass(_layers[_layers.Count-1].output, _fcLayer, h);
 
-            int lbl = (int)DataManager.Train.Labels[_batch[i]];
-            handle.Complete();
-            NeuralMath.ClassToOneHot(lbl, _targetOutputs); // Todo: job
+            int targetLbl = (int)DataManager.Train.Labels[_batch[i]];
+            h.Complete();
+            NeuralMath.ClassToOneHot(targetLbl, _targetOutputs); // Todo: job
 
             // handle = NeuralJobs.BackwardsPass(_net, _gradients, _inputs, _targetOutputs, handle);
             // handle = NeuralJobs.AddGradients(_gradients, _gradientsAvg, handle);
-            handle.Complete();
+            // h.Complete();
 
             // Todo: backwards pass logic now does this, don't redo, just check
             NeuralMath.Subtract(_targetOutputs, _fcLayer.Outputs, _dCdO);
@@ -161,7 +162,7 @@ public class ConvTest : MonoBehaviour {
         // Update weights and biases according to averaged gradient and learning rate
         _rate = 3.0f / (float)BatchSize;
         // handle = NeuralJobs.UpdateParameters(_net, _gradientsAvg, _rate, handle);
-        handle.Complete(); // Todo: Is this one needed?
+        h.Complete(); // Todo: Is this one needed?
 
         _batchCount++;
 
@@ -169,49 +170,6 @@ public class ConvTest : MonoBehaviour {
         _trainingLoss = (float)System.Math.Round(avgTrainCost, 6);
 
         UnityEngine.Profiling.Profiler.EndSample();
-    }
-
-    private static JobHandle ForwardPass(NativeArray<float> img, IList<ConvLayer2D> _layers, FCLayer _fcLayer, JobHandle h) {
-        // Convolution layers
-
-        var input = img;
-        for (int i = 0; i < _layers.Count; i++) {
-            var cj = new Conv2DJob();
-            cj.input = input;
-            cj.layer = _layers[i];
-            h = cj.Schedule(h);
-
-            var bj = new AddBias2DJob();
-            bj.layer = _layers[i];
-            h = bj.Schedule(h);
-
-            var rj = new NNBurst.ReluAssignJob();
-            rj.Data = _layers[i].output;
-            h = rj.Schedule(h);
-
-            input = _layers[i].output;
-        }
-
-        // Fully connected layer (todo: reuse from library)
-
-        const int numThreads = 8;
-
-        var b = new CopyParallelJob();
-        b.From = _fcLayer.Biases;
-        b.To = _fcLayer.Outputs;
-        h = b.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);
-
-        var d = new DotParallelJob();
-        d.Input = _layers[_layers.Count-1].output;
-        d.Weights = _fcLayer.Weights;
-        d.Output = _fcLayer.Outputs;
-        h = d.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);
-
-        var s = new SigmoidAssignParallelJob();
-        s.Data = _fcLayer.Outputs;
-        h = s.Schedule(_fcLayer.Outputs.Length, _fcLayer.Outputs.Length / numThreads, h);
-
-        return h;
     }
 
     private void OnGUI() {

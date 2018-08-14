@@ -105,6 +105,7 @@ namespace NNBurst {
     }
 
     public static class NeuralJobs {
+        // Todo: The below 2 CopyInput functions are meh
         public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Mnist.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
             var copyInputJob = new CopySubsetJob();
             copyInputJob.From = set.Images;
@@ -168,7 +169,7 @@ namespace NNBurst {
             sj.Output = gradients.DCDO;
             h = sj.Schedule(h);
 
-            var bfj = new BackPropOutputJob();
+            var bfj = new BackPropSingleOutputJob();
             bfj.DCDZNext = gradients.DCDO;
             bfj.DCDZ = gradients.Last.DCDZ;
             bfj.Outputs = net.Last.Outputs;
@@ -183,7 +184,7 @@ namespace NNBurst {
 
             // Note, indexing using net.layers.length here is misleading, since that count is one less than if you include input layer
             for (int l = net.Layers.Length - 2; l >= 0; l--) {
-                var bej = new BackPropErrorJob();
+                var bej = new BackPropMultiOutputJob();
                 bej.DCDZNext = gradients.Layers[l + 1].DCDZ;
                 bej.WeightsNext = net.Layers[l + 1].Weights;
                 bej.DCDZ = gradients.Layers[l].DCDZ;
@@ -202,6 +203,8 @@ namespace NNBurst {
         }
 
         public static JobHandle ZeroGradients(FCGradients gradients, JobHandle handle = new JobHandle()) {
+            // gradients = 0;
+
             // Todo: parallelize over all these independent calculations
             for (int l = 0; l < gradients.Layers.Length; l++) {
                 var setBiasJob = new SetValueJob();
@@ -221,7 +224,11 @@ namespace NNBurst {
         }
 
         public static JobHandle AddGradients(FCGradients from, FCGradients to, JobHandle handle = new JobHandle()) {
+            // to.Bias += from.Bias
+            // to.Weights += from.Weights
+
             // Todo: parallelize over layers and/or biases/weights
+
             for (int l = 0; l < from.Layers.Length; l++) {
                 var addBiasJob = new AddAssignJob();
                 addBiasJob.Data = from.Layers[l].DCDZ;
@@ -238,6 +245,9 @@ namespace NNBurst {
         }
 
         public static JobHandle UpdateParameters(FCNetwork net, FCGradients gradients, float rate, JobHandle handle = new JobHandle()) {
+            // Biases -= DCDZ * rate
+            // Weights -= DCDW * rate
+
             // Todo: Find a nice way to fold the multiply by learning rate and addition together in one pass over the data
             // Also, parallelize over all the arrays
 
@@ -389,7 +399,7 @@ namespace NNBurst {
     public struct SubtractJob : IJob {
         [ReadOnly] public NativeArray<float> A;
         [ReadOnly] public NativeArray<float> B;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute() {
             for (int i = 0; i < A.Length; i++) {
@@ -402,7 +412,7 @@ namespace NNBurst {
     public struct SubtractParallelJob : IJobParallelFor {
         [ReadOnly] public NativeArray<float> A;
         [ReadOnly] public NativeArray<float> B;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute(int i) {
             Output[i] = A[i] - B[i];
@@ -420,8 +430,8 @@ namespace NNBurst {
             // Outer loop is parallelizable
             for (int n = 0; n < Output.Length; n++) {
                 float a = 0f;
-                for (int i = 0; i < Input.Length; i++) {
-                    a += Input[i] * Weights[Input.Length * n + i];
+                for (int w = 0; w < Input.Length; w++) {
+                    a += Input[w] * Weights[Input.Length * n + w];
                 }
                 Output[n] = a;
             }
@@ -437,15 +447,15 @@ namespace NNBurst {
 
         public void Execute(int n) {
             float a = 0f;
-            for (int i = 0; i < Input.Length; i++) {
-                a += Input[i] * Weights[Input.Length * n + i];
+            for (int w = 0; w < Input.Length; w++) {
+                a += Input[w] * Weights[Input.Length * n + w];
             }
             Output[n] = a;
         }
     }
 
     [BurstCompile]
-    public struct BackPropOutputJob : IJob {
+    public struct BackPropSingleOutputJob : IJob {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> Outputs;
         [WriteOnly] public NativeArray<float> DCDZ;
@@ -453,15 +463,14 @@ namespace NNBurst {
         public void Execute() {
             for (int n = 0; n < Outputs.Length; n++) {
                 float dOdZ = NeuralMath.SigmoidPrime(Outputs[n]);
-                
-                float dcdzn = DCDZNext[n] * dOdZ;
-                DCDZ[n] = dcdzn;
+
+                DCDZ[n] = DCDZNext[n] * dOdZ;
             }
         }
     }
 
     [BurstCompile]
-    public struct BackPropErrorJob : IJob {
+    public struct BackPropMultiOutputJob : IJob {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> WeightsNext;
         [ReadOnly] public NativeArray<float> Outputs;
@@ -475,8 +484,8 @@ namespace NNBurst {
                 for (int nNext = 0; nNext < DCDZNext.Length; nNext++) {
                     dcdzn += DCDZNext[nNext] * WeightsNext[nNext * DCDZ.Length + n];
                 }
-                dcdzn *= dOdZ;
-                DCDZ[n] = dcdzn;
+
+                DCDZ[n] = dcdzn * dOdZ;
             }
         }
     }
