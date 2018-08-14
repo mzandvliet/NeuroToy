@@ -2,6 +2,7 @@ using System.IO;
 using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
+using Unity.Jobs;
 
 namespace NNBurst.Mnist {
     public struct Dataset : System.IDisposable {
@@ -125,6 +126,16 @@ namespace NNBurst.Mnist {
                 list[k] = list[n];
                 list[n] = value;
             }
+        }
+
+        public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Mnist.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
+            var copyInputJob = new CopySubsetJob();
+            copyInputJob.From = set.Images;
+            copyInputJob.To = inputs;
+            copyInputJob.Length = set.ImgDims;
+            copyInputJob.FromStart = imgIdx * set.ImgDims;
+            copyInputJob.ToStart = 0;
+            return copyInputJob.Schedule(handle);
         }
 
         public static void ToTexture(Dataset set, int imgIndex, Texture2D tex) {

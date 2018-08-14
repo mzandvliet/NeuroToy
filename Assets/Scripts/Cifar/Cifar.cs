@@ -2,6 +2,7 @@ using System.IO;
 using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
+using Unity.Jobs;
 
 namespace NNBurst.Cifar {
     public struct Dataset : System.IDisposable {
@@ -13,24 +14,10 @@ namespace NNBurst.Cifar {
             get { return Labels.Length; }
         }
 
-        public int Rows {
-            get;
-            private set;
-        }
-        public int Cols {
-            get;
-            private set;
-        }
-        public int ImgDims {
-            get { return Rows * Cols; }
-        }
-
-        public Dataset(int count, int rows, int cols) {
+        public Dataset(int count) {
             Labels = new NativeArray<Label>(count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            Images = new NativeArray<float>(count * rows * cols * 3, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Images = new NativeArray<float>(count * DataManager.Height * DataManager.Width * DataManager.Channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             Indices = new List<int>(count);
-            Rows = rows;
-            Cols = cols;
         }
 
         public void Dispose() {
@@ -59,28 +46,28 @@ namespace NNBurst.Cifar {
         private const string TestImagePath = "test_batch.bin";
 
         const int NumImgsPerFile = 10000;
-        const int Rows = 32;
-        const int Cols = 32;
-        const int Channnels = 3;
-        const int ImgDims = Rows * Cols;
+        public const int Height = 32;
+        public const int Width = 32;
+        public const int Channels = 3;
+        public const int ImgDims = Height * Width;
 
         public static Dataset Train;
         public static Dataset Test;
         
 
         public static void Load() {
-            Train = new Dataset(NumImgsPerFile * 5, Rows, Cols);
+            Train = new Dataset(NumImgsPerFile * 5);
             for (int i = 0; i < 5; i++) {
                 string path = TrainImagePathPrefix + (i+1) + TrainImagePathPostfix;
                 Load(path, Train, i * NumImgsPerFile);
             }
 
-            Test = new Dataset(NumImgsPerFile, Rows, Cols);
+            Test = new Dataset(NumImgsPerFile);
             Load(TestImagePath, Test, 0);
         }
 
         public static void Unload() {
-            Debug.Log("MNIST: Unloading datasets...");
+            Debug.Log("CIFAR: Unloading datasets...");
             Train.Dispose();
             Test.Dispose();
         }
@@ -96,8 +83,8 @@ namespace NNBurst.Cifar {
                 byte lbl = imgReader.ReadByte();
                 set.Labels[imgOffset + i] = (Label)lbl;
 
-                int imgStart = ((imgOffset + i) * Channnels * ImgDims);
-                for (int c = 0; c < Channnels; c++) {
+                int imgStart = ((imgOffset + i) * Channels * ImgDims);
+                for (int c = 0; c < Channels; c++) {
                     int colStart = c * ImgDims;
                     for (int p = 0; p < ImgDims; p++) {
                         byte val = imgReader.ReadByte();
@@ -139,25 +126,35 @@ namespace NNBurst.Cifar {
             }
         }
 
+        public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Cifar.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
+            var copyInputJob = new CopySubsetJob();
+            copyInputJob.From = set.Images;
+            copyInputJob.To = inputs;
+            copyInputJob.Length = ImgDims * Channels;
+            copyInputJob.FromStart = imgIdx * ImgDims * Channels;
+            copyInputJob.ToStart = 0;
+            return copyInputJob.Schedule(handle);
+        }
+
         public static void ToTexture(Dataset set, int imgIndex, Texture2D tex) {
-            var colors = new Color[set.ImgDims];
+            var colors = new Color[ImgDims];
 
-            int imgStart = imgIndex * set.ImgDims * 3;
+            int imgStart = imgIndex * ImgDims * 3;
 
-            for (int y = 0; y < set.Cols; y++) {
-                for (int x = 0; x < set.Rows; x++) {
-                    int p = y * set.Cols + x;
+            for (int y = 0; y < Width; y++) {
+                for (int x = 0; x < Width; x++) {
+                    int p = y * Height + x;
                     
                     float r = set.Images[imgStart + 1024 * 0 + p];
                     float g = set.Images[imgStart + 1024 * 1 + p];
                     float b = set.Images[imgStart + 1024 * 2 + p];
 
                     // Invert y
-                    colors[(set.Cols - 1 - y) * set.Cols + x] = new Color(r, g, b, 1f);
+                    colors[(Height - 1 - y) * Height + x] = new Color(r, g, b, 1f);
                 }
             }
 
-            tex.SetPixels(0, 0, set.Rows, set.Cols, colors);
+            tex.SetPixels(0, 0, Width, DataManager.Height, colors);
             tex.Apply(false);
         }
     }

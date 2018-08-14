@@ -10,6 +10,7 @@ using Unity.Jobs;
 using Unity.Collections;
 using System.Collections.Generic;
 using NNBurst.Cifar;
+using DataManager = NNBurst.Cifar.DataManager;
 
 namespace NNBurst {
     public class CifarTraining : MonoBehaviour {
@@ -47,7 +48,7 @@ namespace NNBurst {
             _random = new System.Random();
 
             var config = new FCNetworkConfig();
-            config.Layers.Add(new FCLayerConfig { Neurons = DataManager.Train.ImgDims * 3 });
+            config.Layers.Add(new FCLayerConfig { Neurons = DataManager.ImgDims * DataManager.Channels });
             config.Layers.Add(new FCLayerConfig { Neurons = 40 });
             config.Layers.Add(new FCLayerConfig { Neurons = 20 });
             config.Layers.Add(new FCLayerConfig { Neurons = 10 });
@@ -61,7 +62,7 @@ namespace NNBurst {
             _batch = new NativeArray<int>(BatchSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
             _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             _dCdO = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            _inputs = new NativeArray<float>(DataManager.Test.ImgDims * 3, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            _inputs = new NativeArray<float>(DataManager.ImgDims * 3, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             _watch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -75,7 +76,7 @@ namespace NNBurst {
 
         private void Update() {
             if (_epochCount < 30) {
-                if (_batchCount < (DataManager.Train.Labels.Length/BatchSize)) {
+                if (_batchCount < (DataManager.Train.Labels.Length/ BatchSize)) {
                     for (int i = 0; i < 100; i++) {
                         TrainMinibatch();
                     }
@@ -131,7 +132,7 @@ namespace NNBurst {
             var handle = NeuralJobs.ZeroGradients(_gradientsAvg);
 
             for (int i = 0; i < _batch.Length; i++) {
-                handle = NeuralJobs.CopyInput(_inputs, DataManager.Train, _batch[i], handle);
+                handle = DataManager.CopyInput(_inputs, DataManager.Train, _batch[i], handle);
                 handle = NeuralJobs.ForwardPass(_net, _inputs, handle);
 
                 int lbl = (int)DataManager.Train.Labels[_batch[i]];
@@ -168,7 +169,7 @@ namespace NNBurst {
             for (int i = 0; i < DataManager.Test.NumImgs; i++) {
                 int lbl = (int)DataManager.Test.Labels[i];
 
-                var handle = NeuralJobs.CopyInput(_inputs, DataManager.Test, i);
+                var handle = DataManager.CopyInput(_inputs, DataManager.Test, i);
                 handle = NeuralJobs.ForwardPass(_net, _inputs, handle);
                 handle.Complete();
 

@@ -105,27 +105,6 @@ namespace NNBurst {
     }
 
     public static class NeuralJobs {
-        // Todo: The below 2 CopyInput functions are meh
-        public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Mnist.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
-            var copyInputJob = new CopySubsetJob();
-            copyInputJob.From = set.Images;
-            copyInputJob.To = inputs;
-            copyInputJob.Length = set.ImgDims;
-            copyInputJob.FromStart = imgIdx * set.ImgDims;
-            copyInputJob.ToStart = 0;
-            return copyInputJob.Schedule(handle);
-        }
-
-        public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Cifar.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
-            var copyInputJob = new CopySubsetJob();
-            copyInputJob.From = set.Images;
-            copyInputJob.To = inputs;
-            copyInputJob.Length = set.ImgDims * 3;
-            copyInputJob.FromStart = imgIdx * set.ImgDims * 3;
-            copyInputJob.ToStart = 0;
-            return copyInputJob.Schedule(handle);
-        }
-
         public static JobHandle ForwardPass(FCNetwork net, NativeArray<float> input, JobHandle handle = new JobHandle()) {
             NativeArray<float> last = input;
 

@@ -131,7 +131,7 @@ namespace NNBurst {
             var handle = NeuralJobs.ZeroGradients(_gradientsAvg);
 
             for (int i = 0; i < _batch.Length; i++) {
-                handle = NeuralJobs.CopyInput(_inputs, DataManager.Train, _batch[i], handle);
+                handle = DataManager.CopyInput(_inputs, DataManager.Train, _batch[i], handle);
                 handle = NeuralJobs.ForwardPass(_net, _inputs, handle);
 
                 int lbl = DataManager.Train.Labels[_batch[i]];
@@ -168,7 +168,7 @@ namespace NNBurst {
             for (int i = 0; i < DataManager.Test.NumImgs; i++) {
                 int lbl = DataManager.Test.Labels[i];
 
-                var handle = NeuralJobs.CopyInput(_inputs, DataManager.Test, i);
+                var handle = DataManager.CopyInput(_inputs, DataManager.Test, i);
                 handle = NeuralJobs.ForwardPass(_net, _inputs, handle);
                 handle.Complete();
 
