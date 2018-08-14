@@ -14,24 +14,10 @@ namespace NNBurst.Mnist {
             get { return Labels.Length; }
         }
 
-        public int Rows {
-            get;
-            private set;
-        }
-        public int Cols {
-            get;
-            private set;
-        }
-        public int ImgDims {
-            get { return Rows * Cols; }
-        }
-
-        public Dataset(int count, int rows, int cols) {
+        public Dataset(int count) {
             Labels = new NativeArray<int>(count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            Images = new NativeArray<float>(count * rows * cols, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Images = new NativeArray<float>(count * DataManager.ImgDims * DataManager.Channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             Indices = new List<int>(count);
-            Rows = rows;
-            Cols = cols;
         }
 
         public void Dispose() {
@@ -49,6 +35,11 @@ namespace NNBurst.Mnist {
 
         public static Dataset Train;
         public static Dataset Test;
+
+        public const int Width = 28;
+        public const int Height = 28;
+        public const int ImgDims = Width * Height;
+        public const int Channels = 1;
 
         public static void Load() {
             Train = Load(TrainImagePath, TrainLabelPath);
@@ -76,7 +67,7 @@ namespace NNBurst.Mnist {
 
             Debug.Log("MNIST: Loading " + imgPath + ", Imgs: " + NumImgs + " Rows: " + Rows + " Cols: " + Cols);
 
-            var set = new Dataset(NumImgs, Rows, Cols);
+            var set = new Dataset(NumImgs);
 
             for (int i = 0; i < NumImgs; i++) {
                 byte lbl = lblReader.ReadByte();
@@ -132,23 +123,23 @@ namespace NNBurst.Mnist {
             var copyInputJob = new CopySubsetJob();
             copyInputJob.From = set.Images;
             copyInputJob.To = inputs;
-            copyInputJob.Length = set.ImgDims;
-            copyInputJob.FromStart = imgIdx * set.ImgDims;
+            copyInputJob.Length = ImgDims;
+            copyInputJob.FromStart = imgIdx * ImgDims;
             copyInputJob.ToStart = 0;
             return copyInputJob.Schedule(handle);
         }
 
         public static void ToTexture(Dataset set, int imgIndex, Texture2D tex) {
-            var colors = new Color[set.ImgDims];
+            var colors = new Color[ImgDims];
 
-            for (int y = 0; y < set.Cols; y++) {
-                for (int x = 0; x < set.Rows; x++) {
-                    float pix = set.Images[imgIndex * set.ImgDims + y * set.Cols + x];
-                    colors[y * set.Cols + x] = new Color(pix, pix, pix, 1f);
+            for (int y = 0; y < Height; y++) {
+                for (int x = 0; x < Width; x++) {
+                    float pix = set.Images[imgIndex * ImgDims + y * Height + x];
+                    colors[y * Height + x] = new Color(pix, pix, pix, 1f);
                 }
             }
 
-            tex.SetPixels(0, 0, set.Rows, set.Cols, colors);
+            tex.SetPixels(0, 0, Width, Height, colors);
             tex.Apply(false);
         }
     }

@@ -2,7 +2,7 @@ using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
 using Unity.Jobs;
-using Cifar = NNBurst.Cifar.DataManager;
+using DataManager = NNBurst.Mnist.DataManager;
 using NNBurst;
 
 /*
@@ -59,16 +59,16 @@ public class ConvTest : MonoBehaviour {
     private void Awake() {
         _random = new System.Random();
 
-        Cifar.Load();
+        DataManager.Load();
 
         // Create convolution layers
 
         _layers = new List<ConvLayer2D>();
-        var l1 = ConvLayer2D.Create(Cifar.Width, Cifar.Channels, 5, 1, 0, 4).Value;
+        var l1 = ConvLayer2D.Create(DataManager.Width, DataManager.Channels, 5, 1, 0, 4).Value;
         _layers.Add(l1);
-        var l2 = ConvLayer2D.Create(l1.OutWidth, l1.NumFilters, 5, 1, 0, 4).Value;
+        var l2 = ConvLayer2D.Create(l1.OutWidth, l1.NumFilters, 3, 3, 0, 4).Value;
         _layers.Add(l2);
-        var l3 = ConvLayer2D.Create(l2.OutWidth, l2.NumFilters, 3, 3, 0, 4).Value;
+        var l3 = ConvLayer2D.Create(l2.OutWidth, l2.NumFilters, 3, 1, 0, 4).Value;
         _layers.Add(l3);
 
         var last = l3;
@@ -99,7 +99,7 @@ public class ConvTest : MonoBehaviour {
         _batch = new NativeArray<int>(BatchSize, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         _dCdO = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        _input = new NativeArray<float>(Cifar.ImgDims * Cifar.Channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        _input = new NativeArray<float>(DataManager.ImgDims * DataManager.Channels, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
     }
 
     private void Start() {
@@ -121,7 +121,7 @@ public class ConvTest : MonoBehaviour {
         _dCdO.Dispose();
         _input.Dispose();
 
-        Cifar.Unload();
+        DataManager.Unload();
     }
 
     private void TrainMinibatch() {
@@ -129,17 +129,17 @@ public class ConvTest : MonoBehaviour {
 
         float avgTrainCost = 0f;
 
-        Cifar.GetBatch(_batch, Cifar.Train, _random);
+        DataManager.GetBatch(_batch, DataManager.Train, _random);
 
         // var h = NeuralJobs.ZeroGradients(_gradientsAvg);
         var h = new JobHandle();
 
         for (int i = 0; i < _batch.Length; i++) {
-            h = Cifar.CopyInput(_input, Cifar.Train, _batch[i], h);
+            h = DataManager.CopyInput(_input, DataManager.Train, _batch[i], h);
             h = ConvolutionJobs.ForwardPass(_input, _layers, h);
             h = ConvolutionJobs.ForwardPass(_layers[_layers.Count-1].output, _fcLayer, h);
 
-            int targetLbl = (int)Cifar.Train.Labels[_batch[i]];
+            int targetLbl = (int)DataManager.Train.Labels[_batch[i]];
             h.Complete();
             NeuralMath.ClassToOneHot(targetLbl, _targetOutputs); // Todo: job
 
@@ -179,7 +179,7 @@ public class ConvTest : MonoBehaviour {
         GUILayout.BeginVertical(GUI.skin.box);
         {
             GUILayout.Label("Epoch: " + _epochCount);
-            GUILayout.Label("Batch: " + _batchCount + "/" + (Cifar.Train.Labels.Length / BatchSize));
+            GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.Train.Labels.Length / BatchSize));
             GUILayout.Label("Train Loss: " + _trainingLoss);
             GUILayout.Label("Rate: " + _rate);
         }

@@ -46,7 +46,7 @@ namespace NNBurst {
             _random = new System.Random();
 
             var config = new FCNetworkConfig();
-            config.Layers.Add(new FCLayerConfig { Neurons = DataManager.Train.ImgDims });
+            config.Layers.Add(new FCLayerConfig { Neurons = DataManager.ImgDims });
             config.Layers.Add(new FCLayerConfig { Neurons = 30 });
             config.Layers.Add(new FCLayerConfig { Neurons = 10 });
 
@@ -59,14 +59,14 @@ namespace NNBurst {
 
             _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             _dCdO = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            _inputs = new NativeArray<float>(DataManager.Test.ImgDims, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            _inputs = new NativeArray<float>(DataManager.ImgDims, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             _watch = System.Diagnostics.Stopwatch.StartNew();
 
             // Visual test of data
             const int testImgIdx = 18;
             _label = DataManager.Train.Labels[testImgIdx];
-            _tex = new Texture2D(DataManager.Train.Rows, DataManager.Train.Cols, TextureFormat.ARGB32, false, true);
+            _tex = new Texture2D(DataManager.Width, DataManager.Height, TextureFormat.ARGB32, false, true);
             _tex.filterMode = FilterMode.Point;
             DataManager.ToTexture(DataManager.Train, testImgIdx, _tex);
 
