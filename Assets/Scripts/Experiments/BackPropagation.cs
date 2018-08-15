@@ -18,27 +18,39 @@ namespace BackPropPractice {
         private void Awake() {
             var a = new ConstNode(5f);
             var b = new ConstNode(3f);
-            var add = new AddNode(a, b);
+            var add1 = new AddNode(a, b);
+
+            var c = new ConstNode(2f);
+            var add2 = new AddNode(add1, c);
 
             const float rate = 0.1f;
 
-            for (int i = 0; i < 100; i++) {
-                float result = add.Forward();
-                float target = 10f;
-                float dCdO = target - result; // Note: get from SumSquareLoss node
+            for (int i = 0; i < 10; i++) {
+                float result = add2.Forward();
+                float target = 15f;
 
-                float dA = add.BackwardA(dCdO);
-                float dB = add.BackwardB(dCdO);
+                float dLdAdd2 = target - result; // Note: get from SumSquareLoss node
+                
+                float dLdC = add2.BackwardA(dLdAdd2);
+                float dLdAdd1 = add2.BackwardB(dLdAdd2);
 
-                Debug.Log(a.Value + " + " + b.Value + " = " + result);
+                float dLdA = add1.BackwardA(dLdAdd1);
+                float dLdB = add1.BackwardB(dLdAdd1);
 
-                a.Value += dA * rate;
-                b.Value += dB * rate;
+                Debug.Log("(" + a.Value + " + " + b.Value + ") + " + c.Value + " = " + result);
+
+                a.Value += dLdA * rate;
+                b.Value += dLdB * rate;
+                c.Value += dLdC * rate;
             }
         }
     }
 
     public interface IFloatNode {
+        float Value {
+            get;
+        }
+
         float Forward();
     }
 
@@ -58,6 +70,11 @@ namespace BackPropPractice {
     }
 
     public class AddNode : IFloatNode {
+        public float Value {
+            get;
+            private set;
+        }
+
         public IFloatNode A {
             get;
             private set;
@@ -74,17 +91,54 @@ namespace BackPropPractice {
         }
 
         public float Forward() {
-            return A.Forward() + B.Forward();
+            Value = A.Forward() + B.Forward();
+            return Value;
         }
 
-        public float BackwardA(float error) {
-            return error;
+        public float BackwardA(float grad) {
+            return grad * 1f;
         }
 
-        public float BackwardB(float error) {
-            return error;
+        public float BackwardB(float grad) {
+            return grad * 1f;
         }
     }
+
+    public class MultiplyNode : IFloatNode {
+        public float Value {
+            get;
+            private set;
+        }
+
+        public IFloatNode A {
+            get;
+            private set;
+        }
+
+        public IFloatNode B {
+            get;
+            private set;
+        }
+
+        public MultiplyNode(IFloatNode a, IFloatNode b) {
+            A = a;
+            B = b;
+        }
+
+        public float Forward() {
+            Value = A.Forward() * B.Forward();
+            return Value;
+        }
+
+        public float BackwardA(float grad) {
+            return grad * B.Value;
+        }
+
+        public float BackwardB(float grad) {
+            return grad * A.Value;
+        }
+    }
+
 
     // public class SquareLossNode {
     //     public FloatNode A {
