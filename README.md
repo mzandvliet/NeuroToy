@@ -15,3 +15,4 @@ Don't forget to turn off Burst Leak Detection and SafetyChecks under the Jobs me
 To be done:
 - Fully automatic differentiation for arbitrary network architectures
 - Take the fast Burst code and apply it the older creature experiments
+- Lots of experiments!
