@@ -20,8 +20,8 @@ namespace BackPropPractice {
             var b = new ConstNode(3f);
             var add1 = new AddNode(a, b);
 
-            var c = new ConstNode(2f);
-            var add2 = new AddNode(add1, c);
+            var c = new ConstNode(-2f);
+            var add2 = new MultiplyNode(add1, c);
 
             const float rate = 0.1f;
 
@@ -31,8 +31,8 @@ namespace BackPropPractice {
 
                 float dLdAdd2 = target - result; // Note: get from SumSquareLoss node
                 
-                float dLdC = add2.BackwardA(dLdAdd2);
-                float dLdAdd1 = add2.BackwardB(dLdAdd2);
+                float dLdC = add2.BackwardB(dLdAdd2);
+                float dLdAdd1 = add2.BackwardA(dLdAdd2);
 
                 float dLdA = add1.BackwardA(dLdAdd1);
                 float dLdB = add1.BackwardB(dLdAdd1);
