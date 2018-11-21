@@ -6,7 +6,10 @@ using UnityEngine;
 using Rng = Unity.Mathematics.Random;
 
 /*
- * Todo: Restore genepool notion
+
+Todo:
+Restore mutation and scoring
+Restore genepool notion
  */
 
 public class NeuralCreature {
