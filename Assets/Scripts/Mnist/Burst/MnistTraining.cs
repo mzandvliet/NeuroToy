@@ -23,7 +23,6 @@ namespace NNBurst {
         private NativeArray<int> _batch;
         NativeArray<float> _targetOutputs;
         NativeArray<float> _dCdO;
-        NativeArray<float> _inputs;
 
         int _epochCount;
         int _batchCount;
@@ -47,9 +46,9 @@ namespace NNBurst {
             _rng = new Rng(1234);
 
             var config = new FCNetworkConfig();
-            config.Layers.Add(new FCLayerConfig { Neurons = DataManager.ImgDims });
-            config.Layers.Add(new FCLayerConfig { Neurons = 30 });
-            config.Layers.Add(new FCLayerConfig { Neurons = 10 });
+            config.Layers.Add(new FCLayerConfig { NumNeurons = DataManager.ImgDims });
+            config.Layers.Add(new FCLayerConfig { NumNeurons = 30 });
+            config.Layers.Add(new FCLayerConfig { NumNeurons = 10 });
 
             _net = new FCNetwork(config);
             NeuralUtils.Initialize(_net, ref _rng);
@@ -60,7 +59,6 @@ namespace NNBurst {
 
             _targetOutputs = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             _dCdO = new NativeArray<float>(OutputClassCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            _inputs = new NativeArray<float>(DataManager.ImgDims, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             _watch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -119,7 +117,6 @@ namespace NNBurst {
             _batch.Dispose();
             _targetOutputs.Dispose();
             _dCdO.Dispose();
-            _inputs.Dispose();
         }
 
         private void TrainMinibatch() {
@@ -132,14 +129,14 @@ namespace NNBurst {
             var handle = NeuralJobs.ZeroGradients(_gradientsAvg);
 
             for (int i = 0; i < _batch.Length; i++) {
-                handle = DataManager.CopyInput(_inputs, DataManager.Train, _batch[i], handle);
-                handle = NeuralJobs.ForwardPass(_net, _inputs, handle);
+                handle = DataManager.CopyInput(_net.Inputs, DataManager.Train, _batch[i], handle);
+                handle = NeuralJobs.ForwardPass(_net, handle);
 
                 int lbl = DataManager.Train.Labels[_batch[i]];
                 handle.Complete();
                 NeuralMath.ClassToOneHot(lbl, _targetOutputs); // Todo: job
 
-                handle = NeuralJobs.BackwardsPass(_net, _gradients, _inputs, _targetOutputs, handle);
+                handle = NeuralJobs.BackwardsPass(_net, _gradients, _targetOutputs, handle);
                 handle = NeuralJobs.AddGradients(_gradients, _gradientsAvg, handle);
                 handle.Complete();
 
@@ -169,8 +166,8 @@ namespace NNBurst {
             for (int i = 0; i < DataManager.Test.NumImgs; i++) {
                 int lbl = DataManager.Test.Labels[i];
 
-                var handle = DataManager.CopyInput(_inputs, DataManager.Test, i);
-                handle = NeuralJobs.ForwardPass(_net, _inputs, handle);
+                var handle = DataManager.CopyInput(_net.Inputs, DataManager.Test, i);
+                handle = NeuralJobs.ForwardPass(_net, handle);
                 handle.Complete();
 
                 int predictedLbl = NeuralMath.ArgMax(_net.Last.Outputs);

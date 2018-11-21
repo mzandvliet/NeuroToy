@@ -98,7 +98,7 @@ namespace NNBurst.Mnist {
                 for (int i = 0; i < set.NumImgs; i++) {
                     set.Indices.Add(i);
                 }
-                Shuffle(set.Indices, rng);
+                Ramjet.Utils.Shuffle(set.Indices, ref rng);
             }
 
             for (int i = 0; i < batch.Length; i++) {
@@ -107,18 +107,6 @@ namespace NNBurst.Mnist {
             }
 
             UnityEngine.Profiling.Profiler.EndSample();
-        }
-
-        // Todo: native containers
-        public static void Shuffle<T>(IList<T> list, Rng rng) {
-            int n = list.Count;
-            while (n > 1) {
-                n--;
-                int k = rng.NextInt(n + 1);
-                T value = list[k];
-                list[k] = list[n];
-                list[n] = value;
-            }
         }
 
         public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Mnist.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {

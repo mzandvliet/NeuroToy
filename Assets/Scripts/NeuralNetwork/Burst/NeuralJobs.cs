@@ -99,8 +99,8 @@ namespace NNBurst {
     }
 
     public static class NeuralJobs {
-        public static JobHandle ForwardPass(FCNetwork net, NativeArray<float> input, JobHandle handle = new JobHandle()) {
-            NativeArray<float> last = input;
+        public static JobHandle ForwardPass(FCNetwork net, JobHandle handle = new JobHandle()) {
+            NativeArray<float> last = net.Inputs;
 
             for (int l = 0; l < net.Layers.Length; l++) {
                 var layer = net.Layers[l];
@@ -128,7 +128,7 @@ namespace NNBurst {
             return handle;
         }
 
-        public static JobHandle BackwardsPass(FCNetwork net, FCGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle = new JobHandle()) {
+        public static JobHandle BackwardsPass(FCNetwork net, FCGradients gradients, NativeArray<float> target, JobHandle handle = new JobHandle()) {
             JobHandle h = handle;
 
             // Todo: 
@@ -168,7 +168,7 @@ namespace NNBurst {
                 bwj.DCDZ = gradients.Layers[l].DCDZ;
                 bwj.DCDW = gradients.Layers[l].DCDW;
                 bwj.Outputs = net.Layers[l].Outputs;
-                bwj.OutputsPrev = l == 0 ? input : net.Layers[l - 1].Outputs;
+                bwj.OutputsPrev = l == 0 ? net.Inputs : net.Layers[l - 1].Outputs;
                 h = bwj.Schedule(h);
             }
 

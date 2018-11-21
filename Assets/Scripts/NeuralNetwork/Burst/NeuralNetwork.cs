@@ -22,7 +22,7 @@ namespace NNBurst {
     }
 
     public struct FCLayerConfig {
-        public int Neurons;
+        public int NumNeurons;
     }
 
     public class FCNetworkConfig {
@@ -76,6 +76,7 @@ namespace NNBurst {
     }
 
     public class FCNetwork : System.IDisposable {
+        public NativeArray<float> Inputs;
         public FCLayer[] Layers;
 
         public FCLayer Last {
@@ -88,14 +89,16 @@ namespace NNBurst {
         }
 
         public FCNetwork(FCNetworkConfig config) {
+            Inputs = new NativeArray<float>(config.Layers[0].NumNeurons, Allocator.Persistent);
             Layers = new FCLayer[config.Layers.Count - 1];
             for (int l = 0; l < Layers.Length; l++) {
-                Layers[l] = new FCLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
+                Layers[l] = new FCLayer(config.Layers[l + 1].NumNeurons, config.Layers[l].NumNeurons);
             }
             Config = config;
         }
 
         public void Dispose() {
+            Inputs.Dispose();
             for (int l = 0; l < Layers.Length; l++) {
                 Layers[l].Dispose();
             }
@@ -114,10 +117,10 @@ namespace NNBurst {
         public FCGradients(FCNetworkConfig config) {
             Layers = new FCGradientsLayer[config.Layers.Count - 1];
             for (int l = 0; l < Layers.Length; l++) {
-                Layers[l] = new FCGradientsLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
+                Layers[l] = new FCGradientsLayer(config.Layers[l + 1].NumNeurons, config.Layers[l].NumNeurons);
             }
 
-            DCDO = new NativeArray<float>(config.Layers[config.Layers.Count - 1].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            DCDO = new NativeArray<float>(config.Layers[config.Layers.Count - 1].NumNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             Config = config;
         }
 
