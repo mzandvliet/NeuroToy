@@ -1,7 +1,9 @@
 ﻿using System.Collections.Generic;
 using System.Threading;
+using NNBurst;
+using Unity.Jobs;
 using UnityEngine;
-using Random = System.Random;
+using Rng = Unity.Mathematics.Random;
 
 /*
  * Todo: Restore genepool notion
@@ -9,7 +11,7 @@ using Random = System.Random;
 
 public class NeuralCreature {
     public Creature Body;
-    public Network Mind;
+    public FCNetwork Mind;
 
     public Vector3 Goal;
     public float Score;
@@ -32,20 +34,25 @@ public class LocoApplication : MonoBehaviour {
     private int _episodeTickCount;
     private int _episodeCount;
 
-    private Network _genotype;
-    private readonly Random _random = new Random();
+    private Rng _rng = new Rng(1234);
 
-    private NeuralNetUpdateWorker[] _neuralNetUpdateWorkers;
-    private WaitHandle[] _neuralNetUptdateWaitHandles;
-
-    [SerializeField] private NeuralNetRenderer _netRenderer;
+    private FCNetwork _genotype;
 
     public static float EpisodeTime { get; private set; }
 
     private void Awake() {
         Application.runInBackground = true;
+
+        var protoCreature = QuadrotorFactory.CreateCreature(
+                Vector3.zero,
+                Quaternion.identity);
+
+        var config = new FCNetworkConfig();
+        config.Layers.Add(new FCLayerConfig { NumNeurons = protoCreature.NumInputs });
+        config.Layers.Add(new FCLayerConfig { NumNeurons = 30 });
+        config.Layers.Add(new FCLayerConfig { NumNeurons = protoCreature.NumOutputs });
         
-//        Utils.GenerateTerrain(_terrain);
+        Destroy(protoCreature.gameObject);
 
         // Create creature bodies
         _creatures = new List<NeuralCreature>(_populationSize);
@@ -57,40 +64,23 @@ public class LocoApplication : MonoBehaviour {
                 spawnPos,
                 GetSpawnRotation());
 
-            nc.Mind = NetBuilder.Build(nc.Body.NetDefinition);
+            nc.Mind = new FCNetwork(config);
+            NeuralUtils.Initialize(nc.Mind, ref _rng);
 
             _creatures.Add(nc);
         }
 
         // Create a random genotype to seed the population
-        Debug.Log("Network topology: " + _creatures[0].Body.NetDefinition);
-        _genotype = NetBuilder.Build(_creatures[0].Body.NetDefinition);
-        NetUtils.RandomGaussian(_genotype, _random);
+        _genotype = new FCNetwork(config);
+        NeuralUtils.Initialize(_genotype, ref _rng);
 
         PrepareNewEpisode();
         MutatePopulation();
-
-        //_netRenderer.SetTarget(_creatures[0].Mind);
 
         // Store initial pose so we can reuse creature gameplay objects across tests
         _creatureInitPose = new List<ITransform>();
         CreatureFactory.SerializePose(_creatures[0].Body, _creatureInitPose);
 
-        const int numWorkers = 8;
-        _neuralNetUpdateWorkers = new NeuralNetUpdateWorker[numWorkers];
-        _neuralNetUptdateWaitHandles = new WaitHandle[numWorkers];
-        int batchSize = _populationSize / numWorkers;
-        for (int i = 0; i < numWorkers; i++) {
-            _neuralNetUpdateWorkers[i] = new NeuralNetUpdateWorker() {
-                Creatures = _creatures,
-                StartIdx = batchSize * i,
-                EndIdx = batchSize * (i + 1)
-            };
-            _neuralNetUptdateWaitHandles[i] = new AutoResetEvent(false);
-        }
-        // Make sure we don't miss any nets in cause of an uneven division
-        _neuralNetUpdateWorkers[_neuralNetUpdateWorkers.Length - 1].EndIdx = _populationSize - 1;
-        
         Physics.autoSimulation = false;
         Physics.autoSyncTransforms = false;
 
@@ -101,6 +91,13 @@ public class LocoApplication : MonoBehaviour {
         }
 
         StartEpisode();
+    }
+
+    private void OnDestroy() {
+        _genotype.Dispose();
+        for (int i = 0; i < _creatures.Count; i++) {
+            _creatures[i].Mind.Dispose();
+        }
     }
 
     private void StartEpisode() {
@@ -127,7 +124,7 @@ public class LocoApplication : MonoBehaviour {
         GUILayout.EndVertical();
     }
 
-    private void FixedUpdate() {
+    private void Update() {
         EpisodeTime += Time.fixedDeltaTime;
 
         if (_episodeActive && _episodeTickCount < _episodeDuration) {
@@ -141,15 +138,11 @@ public class LocoApplication : MonoBehaviour {
                 }
 
                 // Singlethreaded update
+                JobHandle h = new JobHandle();
                 for (int i = 0; i < _creatures.Count; i++) {
-                    NetUtils.Forward(_creatures[i].Mind);
+                    h = JobHandle.CombineDependencies(h, NeuralJobs.ForwardPass(_creatures[i].Mind));
                 }
-
-                // Multithreaded update Todo: error handling, something better than editor crashes
-//                for (int i = 0; i < _neuralNetUpdateWorkers.Length; i++) {
-//                    ThreadPool.QueueUserWorkItem(_neuralNetUpdateWorkers[i].Update, _neuralNetUptdateWaitHandles[i]);
-//                }
-//                WaitHandle.WaitAll(_neuralNetUptdateWaitHandles);
+                h.Complete();
 
                 // Propagate network outputs to physics sim
                 for (int i = 0; i < _creatures.Count; i++) {
@@ -230,21 +223,44 @@ public class LocoApplication : MonoBehaviour {
             _mutationChance = Mathf.Clamp01(_mutationChance * 1.01f);
         }
 
-        NetUtils.ScoreBasedWeightedAverage(topCreatures, _genotype);
+        ScoreBasedWeightedAverage(topCreatures, _genotype);
 
         MutatePopulation();
     }
 
+    // Todo: reinstate
     private void MutatePopulation() {
         // Create new mutated brains from genotype
-        for (int i = 0; i < _creatures.Count; i++) {
-            NetUtils.Copy(_genotype, _creatures[i].Mind);
-            NetUtils.Mutate(
-                _creatures[i].Mind,
-                _mutationChance,
-                _mutationMagnitude,
-                _random);
-        }
+        // for (int i = 0; i < _creatures.Count; i++) {
+        //     NetUtils.Copy(_genotype, _creatures[i].Mind);
+        //     NetUtils.Mutate(
+        //         _creatures[i].Mind,
+        //         _mutationChance,
+        //         _mutationMagnitude,
+        //         ref _rng);
+        // }
+    }
+
+    // Todo: reinstate
+    public static void ScoreBasedWeightedAverage(List<NeuralCreature> nets, FCNetwork genotype) {
+        // float scoreSum = 0f;
+
+        // for (int i = 0; i < nets.Count; i++) {
+        //     scoreSum += Mathf.Pow(nets[i].Score, 3f);
+        // }
+
+        // NNClassic.NetUtils.Zero(genotype);
+
+        // for (int i = 0; i < nets.Count; i++) {
+        //     float scale = Mathf.Pow(nets[i].Score, 3f) / scoreSum;
+        //     Network candidate = nets[i].Mind;
+
+        //     for (int l = 0; l < candidate.Layers.Count; l++) {
+        //         for (int p = 0; p < candidate.Layers[l].ParamCount; p++) {
+        //             genotype.Layers[l][p] += candidate.Layers[l][p] * scale;
+        //         }
+        //     }
+        // }
     }
 
     private static void Reset(NeuralCreature c) {
@@ -264,7 +280,7 @@ public class LocoApplication : MonoBehaviour {
         int i = 0;
         for (int s = 0; s < sensors.Count; s++) {
             for (int sp = 0; sp < sensors[s].SensorCount; sp++) {
-                c.Mind.Input[i] = sensors[s].Get(sp);
+                c.Mind.Inputs[i] = sensors[s].Get(sp);
                 i++;
             }
         }
@@ -276,7 +292,7 @@ public class LocoApplication : MonoBehaviour {
         int i = 0;
         for (int s = 0; s < actuators.Count; s++) {
             for (int sp = 0; sp < actuators[s].ActuatorCount; sp++) {
-                 actuators[s].Set(sp, c.Mind.Output[i]);
+                actuators[s].Set(sp, c.Mind.Last.Outputs[i]);
                 i++;
             }
         }
@@ -301,18 +317,5 @@ public class LocoApplication : MonoBehaviour {
         for (int i = 0; i < _creatures.Count; i++) {
             Gizmos.DrawRay(_creatures[i].Body.Root.Transform.position, _creatures[i].Goal);
         }
-    }
-}
-
-public class NeuralNetUpdateWorker {
-    public List<NeuralCreature> Creatures;
-    public int StartIdx, EndIdx;
-
-    public void Update(object state) {
-        AutoResetEvent ev = (AutoResetEvent) state;
-        for (int i = StartIdx; i < EndIdx; i++) {
-            NetUtils.Forward(Creatures[i].Mind);
-        }
-        ev.Set();
     }
 }

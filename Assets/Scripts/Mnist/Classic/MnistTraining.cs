@@ -2,15 +2,17 @@
 using Unity.Collections;
 using UnityEngine;
 using NNClassic.Mnist;
+using Rng = Unity.Mathematics.Random;
+using NNClassic;
 
 public class MnistTraining : MonoBehaviour {
     private Texture2D _tex;
     private int _label;
 
-    private System.Random _random;
+    private Rng _rng;
     
-    private Network _net;
-    private Network _gradientBucket; // Hack used to store average gradients for minibatch
+    private NNClassic.Network _net;
+    private NNClassic.Network _gradientBucket; // Hack used to store average gradients for minibatch
     [SerializeField] private NeuralNetRenderer _renderer;
 
     int _epoch;
@@ -20,7 +22,7 @@ public class MnistTraining : MonoBehaviour {
 
     private void Awake() {
         Application.runInBackground = true;
-        _random = new System.Random();
+        _rng = new Rng(1234);
 
         DataManager.Load();
 
@@ -34,7 +36,7 @@ public class MnistTraining : MonoBehaviour {
         _net = NetBuilder.Build(def);
         _gradientBucket = NetBuilder.Build(def);
 
-        NetUtils.RandomGaussian(_net, _random);
+        NetUtils.RandomGaussian(_net, ref _rng);
 
         _renderer.SetTarget(_net);
 
@@ -83,7 +85,7 @@ public class MnistTraining : MonoBehaviour {
         int correctTrainLabels = 0;
 
         ZeroGradients(_gradientBucket);
-        var trainBatch = DataManager.GetBatch(batchSize, DataManager.Train, _random);
+        var trainBatch = DataManager.GetBatch(batchSize, DataManager.Train, ref _rng);
         for (int i = 0; i < trainBatch.Indices.Length; i++) {
             int lbl = DataManager.Train.Labels[trainBatch.Indices[i]];
 
@@ -160,13 +162,13 @@ public class MnistTraining : MonoBehaviour {
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
-    private static void CopyInputs(Network net, int imgIdx) {
+    private static void CopyInputs(NNClassic.Network net, int imgIdx) {
         for (int p = 0; p < DataManager.Test.ImgDims; p++) {
             net.Input[p] = DataManager.Test.Images[imgIdx, p];
         }
     }
 
-    private static void ZeroGradients(Network bucket) {
+    private static void ZeroGradients(NNClassic.Network bucket) {
         UnityEngine.Profiling.Profiler.BeginSample("Zero");
             
         for (int l = 1; l < bucket.Layers.Count; l++) {
@@ -182,7 +184,7 @@ public class MnistTraining : MonoBehaviour {
         UnityEngine.Profiling.Profiler.EndSample();
     }
 
-    private static void AddGradients(Network net, Network gradients) {
+    private static void AddGradients(NNClassic.Network net, NNClassic.Network gradients) {
         UnityEngine.Profiling.Profiler.BeginSample("AddGradients");
         
         var lCount = gradients.Layers.Count;

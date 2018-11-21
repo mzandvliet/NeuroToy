@@ -1,10 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-/* 
- * 
- */
-
 public class CreaturePart {
     public Transform Transform;
     public Rigidbody Rigidbody;
@@ -38,9 +34,11 @@ public interface IActuator {
  */
 public class Creature : MonoBehaviour {
     public CreaturePart Root;
-    public NetDefinition NetDefinition;
     public List<ISensor> Sensors;
     public List<IActuator> Actuators;
+
+    public int NumInputs;
+    public int NumOutputs;
 }
 
 public struct ITransform {
@@ -106,15 +104,8 @@ public static class CreatureFactory {
             }
         }
 
-        c.NetDefinition = new NetDefinition(
-            numInputs,
-            new LayerDefinition(numInputs,
-            LayerType.Deterministic, ActivationType.Tanh),
-            new LayerDefinition((numInputs + numOutputs) / 2,
-            LayerType.Deterministic, ActivationType.Tanh),
-            new LayerDefinition(numOutputs,
-            LayerType.Deterministic, ActivationType.Sigmoid)
-        );
+        c.NumInputs = numInputs;
+        c.NumOutputs = numOutputs;
     }
 
     public static void SetActive(Creature creature, bool active) {

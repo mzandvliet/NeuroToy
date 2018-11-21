@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-using NNClassic;
+using Ramjet;
 
 // Senses angle to goal
 public class AngleSensor : MonoBehaviour, ISensor {

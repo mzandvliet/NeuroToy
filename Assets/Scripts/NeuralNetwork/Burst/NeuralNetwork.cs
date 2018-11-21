@@ -1,43 +1,47 @@
-
-
 using System.Collections.Generic;
 using Unity.Collections;
+using Rng = Unity.Mathematics.Random;
+using Ramjet.Mathematics;
 
 namespace NNBurst {
     public static class NeuralUtils {
-        public static void Initialize(NativeNetwork net, System.Random random) {
+        public static void Initialize(FCNetwork net, ref Rng rng) {
             // Todo: init as jobs too. Needs Burst-compatible RNG.
 
             for (int l = 0; l < net.Layers.Length; l++) {
-                NeuralMath.RandomGaussian(random, net.Layers[l].Weights, 0f, 1f);
-                NeuralMath.RandomGaussian(random, net.Layers[l].Biases, 0f, 1f);
+                NeuralMath.RandomGaussian(ref rng, net.Layers[l].Weights, 0f, 1f);
+                NeuralMath.RandomGaussian(ref rng, net.Layers[l].Biases, 0f, 1f);
             }
         }
     }
 
     #region MLP
 
-    public struct NativeLayerConfig {
-        public int Neurons;
+    public interface ILayer {
+
     }
 
-    public class NativeNetworkConfig {
-        public List<NativeLayerConfig> Layers;
+    public struct FCLayerConfig {
+        public int NumNeurons;
+    }
 
-        public NativeNetworkConfig() {
-            Layers = new List<NativeLayerConfig>();
+    public class FCNetworkConfig {
+        public List<FCLayerConfig> Layers;
+
+        public FCNetworkConfig() {
+            Layers = new List<FCLayerConfig>();
         }
     }
 
     // Todo: could test layers just existing of slices of single giant arrays
-    public class NativeNetworkLayer : System.IDisposable {
+    public class FCLayer : System.IDisposable {
         public NativeArray<float> Biases;
         public NativeArray<float> Weights;
         public NativeArray<float> Outputs;
         public readonly int NumNeurons;
         public readonly int NumInputs;
 
-        public NativeNetworkLayer(int numNeurons, int numInputs) {
+        public FCLayer(int numNeurons, int numInputs) {
             Biases = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
             Weights = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
             Outputs = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
@@ -52,40 +56,13 @@ namespace NNBurst {
         }
     }
 
-    public class NativeNetwork : System.IDisposable {
-        public NativeNetworkLayer[] Layers;
-
-        public NativeNetworkLayer Last {
-            get { return Layers[Layers.Length - 1]; }
-        }
-
-        public NativeNetworkConfig Config {
-            get;
-            private set;
-        }
-
-        public NativeNetwork(NativeNetworkConfig config) {
-            Layers = new NativeNetworkLayer[config.Layers.Count - 1];
-            for (int l = 0; l < Layers.Length; l++) {
-                Layers[l] = new NativeNetworkLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
-            }
-            Config = config;
-        }
-
-        public void Dispose() {
-            for (int l = 0; l < Layers.Length; l++) {
-                Layers[l].Dispose();
-            }
-        }
-    }
-
-    public class NativeGradientsLayer : System.IDisposable {
+    public class FCGradientsLayer : System.IDisposable {
         public NativeArray<float> DCDZ;
         public NativeArray<float> DCDW;
         public readonly int NumNeurons;
         public readonly int NumInputs;
 
-        public NativeGradientsLayer(int numNeurons, int numInputs) {
+        public FCGradientsLayer(int numNeurons, int numInputs) {
             DCDZ = new NativeArray<float>(numNeurons, Allocator.Persistent, NativeArrayOptions.ClearMemory);
             DCDW = new NativeArray<float>(numNeurons * numInputs, Allocator.Persistent, NativeArrayOptions.ClearMemory);
             NumNeurons = numNeurons;
@@ -98,22 +75,52 @@ namespace NNBurst {
         }
     }
 
-    public class NativeGradients : System.IDisposable {
-        public NativeGradientsLayer[] Layers;
-        public NativeArray<float> DCDO;
-        public NativeNetworkConfig Config;
+    public class FCNetwork : System.IDisposable {
+        public NativeArray<float> Inputs;
+        public FCLayer[] Layers;
 
-        public NativeGradientsLayer Last {
+        public FCLayer Last {
             get { return Layers[Layers.Length - 1]; }
         }
 
-        public NativeGradients(NativeNetworkConfig config) {
-            Layers = new NativeGradientsLayer[config.Layers.Count - 1];
+        public FCNetworkConfig Config {
+            get;
+            private set;
+        }
+
+        public FCNetwork(FCNetworkConfig config) {
+            Inputs = new NativeArray<float>(config.Layers[0].NumNeurons, Allocator.Persistent);
+            Layers = new FCLayer[config.Layers.Count - 1];
             for (int l = 0; l < Layers.Length; l++) {
-                Layers[l] = new NativeGradientsLayer(config.Layers[l + 1].Neurons, config.Layers[l].Neurons);
+                Layers[l] = new FCLayer(config.Layers[l + 1].NumNeurons, config.Layers[l].NumNeurons);
+            }
+            Config = config;
+        }
+
+        public void Dispose() {
+            Inputs.Dispose();
+            for (int l = 0; l < Layers.Length; l++) {
+                Layers[l].Dispose();
+            }
+        }
+    }
+
+    public class FCGradients : System.IDisposable {
+        public FCGradientsLayer[] Layers;
+        public NativeArray<float> DCDO;
+        public FCNetworkConfig Config;
+
+        public FCGradientsLayer Last {
+            get { return Layers[Layers.Length - 1]; }
+        }
+
+        public FCGradients(FCNetworkConfig config) {
+            Layers = new FCGradientsLayer[config.Layers.Count - 1];
+            for (int l = 0; l < Layers.Length; l++) {
+                Layers[l] = new FCGradientsLayer(config.Layers[l + 1].NumNeurons, config.Layers[l].NumNeurons);
             }
 
-            DCDO = new NativeArray<float>(config.Layers[config.Layers.Count - 1].Neurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            DCDO = new NativeArray<float>(config.Layers[config.Layers.Count - 1].NumNeurons, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             Config = config;
         }
 
@@ -123,19 +130,6 @@ namespace NNBurst {
             }
             DCDO.Dispose();
         }
-    }
-
-    #endregion
-
-    #region Convolution
-
-    /* Convnet design todo:
-    - Specifying the amount of dimensions (1D, 2D, 3D...)
-    - Although at first we could just go with 2D hardcoded
-     */
-
-    public class ConvolutionLayer {
-        public NativeArray<float> Kernel; // Could use NativeSlice to segregate kernel parts. Saves address juggling.
     }
 
     #endregion

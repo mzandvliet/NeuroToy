@@ -3,6 +3,8 @@ using Unity.Collections;
 using static Unity.Mathematics.math;
 using UnityEngine;
 using Unity.Burst;
+using Ramjet.Mathematics;
+using Rng = Unity.Mathematics.Random;
 
 /* Todo:
 Always flush schedule batches
@@ -14,8 +16,7 @@ So immediately we get to the interesting challenge of generating random numbers 
 - Basic error handling, such as when input array lengths mismatch (can be done outside of job system)
     - Check that all job inputs are set to valid state
 
-- After checking out singlethreaded performance, try writing ParallalFor variants of
-many of these functions, since most calculations are independent.
+- Try writing ParallalFor variants of many of these functions, since most calculations are independent.
 
 - Maybe we can use NativeSlice concept to flatten structures into 1d arrays
 
@@ -25,15 +26,7 @@ many of these functions, since most calculations are independent.
 
 namespace NNBurst {
     public static class NeuralMath {
-        // Quick and dirty, probably not great
-        public static float Gaussian(MTRandom random, float mean, float stddev) {
-            float x1 = 1f - random.NextFloat();
-            float x2 = 1f - random.NextFloat();
-
-            float y1 = sqrt(-2.0f * log(x1)) * cos(2.0f * Mathf.PI * x2);
-            return y1 * stddev + mean;
-        }
-
+        
         #region Activation Functions
 
         public static float Sigmoid(float x) {
@@ -56,9 +49,9 @@ namespace NNBurst {
 
         #region NativeArray Math
 
-        public static void RandomGaussian(System.Random random, NativeArray<float> values, float mean, float std) {
+        public static void RandomGaussian(ref Rng rng, NativeArray<float> values, float mean, float stddev) {
             for (int i = 0; i < values.Length; i++) {
-                values[i] = NNClassic.Utils.Gaussian(random, mean, std);
+                values[i] = Math.Gaussian(ref rng, mean, stddev);
             }
         }
 
@@ -95,53 +88,39 @@ namespace NNBurst {
             for (int i = 0; i < vector.Length; i++) {
                 sum += vector[i] * vector[i];
             }
-            return Unity.Mathematics.math.sqrt(sum);
+            return sqrt(sum);
+        }
+
+        public static bool IsEven(float x) {
+            return frac(x / 2f) < 0.01f;
         }
 
         #endregion
     }
 
     public static class NeuralJobs {
-        public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Mnist.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
-            var copyInputJob = new CopySubsetJob();
-            copyInputJob.From = set.Images;
-            copyInputJob.To = inputs;
-            copyInputJob.Length = set.ImgDims;
-            copyInputJob.FromStart = imgIdx * set.ImgDims;
-            copyInputJob.ToStart = 0;
-            return copyInputJob.Schedule(handle);
-        }
-
-        public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Cifar.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
-            var copyInputJob = new CopySubsetJob();
-            copyInputJob.From = set.Images;
-            copyInputJob.To = inputs;
-            copyInputJob.Length = set.ImgDims * 3;
-            copyInputJob.FromStart = imgIdx * set.ImgDims * 3;
-            copyInputJob.ToStart = 0;
-            return copyInputJob.Schedule(handle);
-        }
-
-        public static JobHandle ForwardPass(NativeNetwork net, NativeArray<float> input, JobHandle handle = new JobHandle()) {
-            NativeArray<float> last = input;
+        public static JobHandle ForwardPass(FCNetwork net, JobHandle handle = new JobHandle()) {
+            NativeArray<float> last = net.Inputs;
 
             for (int l = 0; l < net.Layers.Length; l++) {
                 var layer = net.Layers[l];
 
+                const int numThreads = 8;
+
                 var b = new CopyParallelJob();
                 b.From = layer.Biases;
                 b.To = layer.Outputs;
-                handle = b.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
+                handle = b.Schedule(layer.Outputs.Length, layer.Outputs.Length / numThreads, handle);
 
                 var d = new DotParallelJob();
                 d.Input = last;
                 d.Weights = layer.Weights;
                 d.Output = layer.Outputs;
-                handle = d.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
+                handle = d.Schedule(layer.Outputs.Length, layer.Outputs.Length / numThreads, handle);
 
-                var s = new SigmoidEqualsParallelJob();
+                var s = new SigmoidAssignParallelJob();
                 s.Data = layer.Outputs;
-                handle = s.Schedule(layer.Outputs.Length, layer.Outputs.Length / 8, handle);
+                handle = s.Schedule(layer.Outputs.Length, layer.Outputs.Length / numThreads, handle);
 
                 last = layer.Outputs;
             }
@@ -149,44 +128,56 @@ namespace NNBurst {
             return handle;
         }
 
-        public static JobHandle BackwardsPass(NativeNetwork net, NativeGradients gradients, NativeArray<float> input, NativeArray<float> target, JobHandle handle = new JobHandle()) {
+        public static JobHandle BackwardsPass(FCNetwork net, FCGradients gradients, NativeArray<float> target, JobHandle handle = new JobHandle()) {
             JobHandle h = handle;
 
-            // Todo: make separate jobs for updating DCDZ and DCDW
-            // DCDW can make good use of ParallelFor, but depends on DCDZ
+            // Todo: 
+            // DCDW can make good use of ParallelFor, depends on DCDZ
             // Oh, but then, while DCDW for layer L is being calculated, DCDZ for L-1 can calculate while DCDW of L is calculating
+            // DCDW computation is an orphan. Other computation doesn't have to wait for it.
 
-            var subtractJob = new SubtractJob();
-            subtractJob.A = net.Last.Outputs;
-            subtractJob.B = target;
-            subtractJob.Output = gradients.DCDO;
-            h = subtractJob.Schedule(h);
+            var sj = new SubtractJob();
+            sj.A = net.Last.Outputs;
+            sj.B = target;
+            sj.Output = gradients.DCDO;
+            h = sj.Schedule(h);
 
-            var backwardsFinalJob = new BackPropFinalJob();
-            backwardsFinalJob.DCDO = gradients.DCDO;
-            backwardsFinalJob.DCDZ = gradients.Last.DCDZ;
-            backwardsFinalJob.DCDW = gradients.Last.DCDW;
-            backwardsFinalJob.Outputs = net.Last.Outputs;
-            backwardsFinalJob.OutputsPrev = net.Layers[net.Layers.Length - 2].Outputs;
-            h = backwardsFinalJob.Schedule(h);
+            var bfj = new BackPropSingleOutputJob();
+            bfj.DCDZNext = gradients.DCDO;
+            bfj.DCDZ = gradients.Last.DCDZ;
+            bfj.Outputs = net.Last.Outputs;
+            h = bfj.Schedule(h);
+
+            var bwj = new BackPropWeightsJob();
+            bwj.DCDZ = gradients.Last.DCDZ;
+            bwj.DCDW = gradients.Last.DCDW;
+            bwj.Outputs = net.Last.Outputs;
+            bwj.OutputsPrev = net.Layers[net.Layers.Length - 2].Outputs;
+            h = bwj.Schedule(h);
 
             // Note, indexing using net.layers.length here is misleading, since that count is one less than if you include input layer
             for (int l = net.Layers.Length - 2; l >= 0; l--) {
-                var backwardsJob = new BackPropJob();
-                backwardsJob.DCDZNext = gradients.Layers[l + 1].DCDZ;
-                backwardsJob.WeightsNext = net.Layers[l + 1].Weights;
-                backwardsJob.DCDZ = gradients.Layers[l].DCDZ;
-                backwardsJob.DCDW = gradients.Layers[l].DCDW;
-                backwardsJob.LOutputs = net.Layers[l].Outputs;
-                backwardsJob.OutputsPrev = l == 0 ? input : net.Layers[l - 1].Outputs;
-                h = backwardsJob.Schedule(h);
-                // h = backwardsJob.Schedule(gradients.Layers[l].NumNeurons, gradients.Layers[l].NumNeurons/8, h);
+                var bej = new BackPropMultiOutputJob();
+                bej.DCDZNext = gradients.Layers[l + 1].DCDZ;
+                bej.WeightsNext = net.Layers[l + 1].Weights;
+                bej.DCDZ = gradients.Layers[l].DCDZ;
+                bej.Outputs = net.Layers[l].Outputs;
+                h = bej.Schedule(h);
+
+                bwj = new BackPropWeightsJob();
+                bwj.DCDZ = gradients.Layers[l].DCDZ;
+                bwj.DCDW = gradients.Layers[l].DCDW;
+                bwj.Outputs = net.Layers[l].Outputs;
+                bwj.OutputsPrev = l == 0 ? net.Inputs : net.Layers[l - 1].Outputs;
+                h = bwj.Schedule(h);
             }
 
             return h;
         }
 
-        public static JobHandle ZeroGradients(NativeGradients gradients, JobHandle handle = new JobHandle()) {
+        public static JobHandle ZeroGradients(FCGradients gradients, JobHandle handle = new JobHandle()) {
+            // gradients = 0;
+
             // Todo: parallelize over all these independent calculations
             for (int l = 0; l < gradients.Layers.Length; l++) {
                 var setBiasJob = new SetValueJob();
@@ -205,15 +196,19 @@ namespace NNBurst {
             return handle;
         }
 
-        public static JobHandle AddGradients(NativeGradients from, NativeGradients to, JobHandle handle = new JobHandle()) {
+        public static JobHandle AddGradients(FCGradients from, FCGradients to, JobHandle handle = new JobHandle()) {
+            // to.Bias += from.Bias
+            // to.Weights += from.Weights
+
             // Todo: parallelize over layers and/or biases/weights
+
             for (int l = 0; l < from.Layers.Length; l++) {
-                var addBiasJob = new AddEqualsJob();
+                var addBiasJob = new AddAssignJob();
                 addBiasJob.Data = from.Layers[l].DCDZ;
                 addBiasJob.To = to.Layers[l].DCDZ;
                 handle = addBiasJob.Schedule(handle);
 
-                var addWeightsJob = new AddEqualsJob();
+                var addWeightsJob = new AddAssignJob();
                 addWeightsJob.Data = from.Layers[l].DCDW;
                 addWeightsJob.To = to.Layers[l].DCDW;
                 handle = addWeightsJob.Schedule(handle);
@@ -222,27 +217,30 @@ namespace NNBurst {
             return handle;
         }
 
-        public static JobHandle UpdateParameters(NativeNetwork net, NativeGradients gradients, float rate, JobHandle handle = new JobHandle()) {
+        public static JobHandle UpdateParameters(FCNetwork net, FCGradients gradients, float rate, JobHandle handle = new JobHandle()) {
+            // Biases -= DCDZ * rate
+            // Weights -= DCDW * rate
+
             // Todo: Find a nice way to fold the multiply by learning rate and addition together in one pass over the data
             // Also, parallelize over all the arrays
 
             for (int l = 0; l < net.Layers.Length; l++) {
-                var m = new MultiplyEqualsJob();
+                var m = new MultiplyAssignJob();
                 m.Data = gradients.Layers[l].DCDZ;
                 m.Value = rate;
                 handle = m.Schedule(handle);
 
-                var s = new SubtractEqualsJob();
+                var s = new SubtractAssignJob();
                 s.Data = gradients.Layers[l].DCDZ;
                 s.From = net.Layers[l].Biases;
                 handle = s.Schedule(handle);
 
-                m = new MultiplyEqualsJob();
+                m = new MultiplyAssignJob();
                 m.Data = gradients.Layers[l].DCDW;
                 m.Value = rate;
                 handle = m.Schedule(handle);
 
-                s = new SubtractEqualsJob();
+                s = new SubtractAssignJob();
                 s.Data = gradients.Layers[l].DCDW;
                 s.From = net.Layers[l].Weights;
                 handle = s.Schedule(handle);
@@ -315,7 +313,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct SigmoidEqualsJob : IJob {
+    public struct SigmoidAssignJob : IJob {
         public NativeArray<float> Data;
 
         public void Execute() {
@@ -326,7 +324,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct SigmoidEqualsParallelJob : IJobParallelFor {
+    public struct SigmoidAssignParallelJob : IJobParallelFor {
         public NativeArray<float> Data;
 
         public void Execute(int i) {
@@ -335,7 +333,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct AddEqualsJob : IJob {
+    public struct AddAssignJob : IJob {
         [ReadOnly] public NativeArray<float> Data;
         public NativeArray<float> To;
 
@@ -347,7 +345,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct SubtractEqualsJob : IJob {
+    public struct SubtractAssignJob : IJob {
         [ReadOnly] public NativeArray<float> Data;
         public NativeArray<float> From;
 
@@ -359,7 +357,7 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct MultiplyEqualsJob : IJob {
+    public struct MultiplyAssignJob : IJob {
         public NativeArray<float> Data;
         [ReadOnly] public float Value;
 
@@ -374,7 +372,7 @@ namespace NNBurst {
     public struct SubtractJob : IJob {
         [ReadOnly] public NativeArray<float> A;
         [ReadOnly] public NativeArray<float> B;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute() {
             for (int i = 0; i < A.Length; i++) {
@@ -387,7 +385,7 @@ namespace NNBurst {
     public struct SubtractParallelJob : IJobParallelFor {
         [ReadOnly] public NativeArray<float> A;
         [ReadOnly] public NativeArray<float> B;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute(int i) {
             Output[i] = A[i] - B[i];
@@ -399,15 +397,16 @@ namespace NNBurst {
     public struct DotJob : IJob {
         [ReadOnly] public NativeArray<float> Input;
         [ReadOnly] public NativeArray<float> Weights;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute() {
             // Outer loop is parallelizable
             for (int n = 0; n < Output.Length; n++) {
-                // Inner loop is best kep synchronous
-                for (int i = 0; i < Input.Length; i++) {
-                    Output[n] += Input[i] * Weights[Input.Length * n + i];
+                float a = 0f;
+                for (int w = 0; w < Input.Length; w++) {
+                    a += Input[w] * Weights[Input.Length * n + w];
                 }
+                Output[n] = a;
             }
         }
     }
@@ -417,64 +416,65 @@ namespace NNBurst {
     public struct DotParallelJob : IJobParallelFor {
         [ReadOnly] public NativeArray<float> Input;
         [ReadOnly] public NativeArray<float> Weights;
-        public NativeArray<float> Output;
+        [WriteOnly] public NativeArray<float> Output;
 
         public void Execute(int n) {
-            // Inner loop is best kep synchronous
-            for (int i = 0; i < Input.Length; i++) {
-                Output[n] += Input[i] * Weights[Input.Length * n + i];
+            float a = 0f;
+            for (int w = 0; w < Input.Length; w++) {
+                a += Input[w] * Weights[Input.Length * n + w];
             }
+            Output[n] = a;
         }
     }
 
-    // Todo: The way backwards passes are written needs lots of restructuring
-    // First, the index juggling needs to be made more readable. Like indexing
-    // the higher layer's weight matrix is a mess right now.
     [BurstCompile]
-    public struct BackPropFinalJob : IJob {
-        [ReadOnly] public NativeArray<float> DCDO;
+    public struct BackPropSingleOutputJob : IJob {
+        [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> Outputs;
-        [ReadOnly] public NativeArray<float> OutputsPrev;
         [WriteOnly] public NativeArray<float> DCDZ;
-        [WriteOnly] public NativeArray<float> DCDW;
 
         public void Execute() {
             for (int n = 0; n < Outputs.Length; n++) {
-                float dOdZ = NeuralMath.SigmoidPrime(Outputs[n]); // Reuses forward pass evaluation of act(z)
-                float dcdzn = DCDO[n] * dOdZ;
-                DCDZ[n] = dcdzn;
+                float dOdZ = NeuralMath.SigmoidPrime(Outputs[n]);
 
-                for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * OutputsPrev.Length + w] = dcdzn * OutputsPrev[w];
-                }
+                DCDZ[n] = DCDZNext[n] * dOdZ;
             }
         }
     }
 
     [BurstCompile]
-    public struct BackPropJob : IJob {
+    public struct BackPropMultiOutputJob : IJob {
         [ReadOnly] public NativeArray<float> DCDZNext;
         [ReadOnly] public NativeArray<float> WeightsNext;
-        [ReadOnly] public NativeArray<float> OutputsPrev;
-        [ReadOnly] public NativeArray<float> LOutputs;
+        [ReadOnly] public NativeArray<float> Outputs;
         [WriteOnly] public NativeArray<float> DCDZ;
-        [WriteOnly] public NativeArray<float> DCDW;
 
         public void Execute() {
-            for (int n = 0; n < LOutputs.Length; n++) {
-                float dOdZ = NeuralMath.SigmoidPrime(LOutputs[n]);
+            for (int n = 0; n < Outputs.Length; n++) {
+                float dOdZ = NeuralMath.SigmoidPrime(Outputs[n]);
 
                 float dcdzn = 0f;
                 for (int nNext = 0; nNext < DCDZNext.Length; nNext++) {
                     dcdzn += DCDZNext[nNext] * WeightsNext[nNext * DCDZ.Length + n];
                 }
-                dcdzn *= dOdZ;
-                DCDZ[n] = dcdzn;
 
-                // Todo: how do we parallelize over the weights?
-                // If we try to ParallelFor, compiler complains that we're writing out of bounds
+                DCDZ[n] = dcdzn * dOdZ;
+            }
+        }
+    }
+
+    // Note: should run after calculation of DCDZ
+    [BurstCompile]
+    public struct BackPropWeightsJob : IJob {
+        [ReadOnly] public NativeArray<float> OutputsPrev;
+        [ReadOnly] public NativeArray<float> Outputs;
+        [ReadOnly] public NativeArray<float> DCDZ;
+        [WriteOnly] public NativeArray<float> DCDW;
+
+        public void Execute() {
+            for (int n = 0; n < Outputs.Length; n++) {
                 for (int w = 0; w < OutputsPrev.Length; w++) {
-                    DCDW[n * OutputsPrev.Length + w] = dcdzn * OutputsPrev[w];
+                    DCDW[n * OutputsPrev.Length + w] = DCDZ[n] * OutputsPrev[w];
                 }
             }
         }

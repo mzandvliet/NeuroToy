@@ -2,6 +2,7 @@
 using System.Text;
 using UnityEngine;
 using System.Collections.Generic;
+using Rng = Unity.Mathematics.Random;
 
 namespace NNClassic.Mnist {
     public struct Dataset {
@@ -81,7 +82,7 @@ namespace NNClassic.Mnist {
             return set;
         }
 
-        public static Batch GetBatch(int size, Dataset set, System.Random r) {
+        public static Batch GetBatch(int size, Dataset set, ref Rng rng) {
             // Todo: can transform dataset to create additional variation
 
             UnityEngine.Profiling.Profiler.BeginSample("GetBatch");
@@ -91,7 +92,7 @@ namespace NNClassic.Mnist {
                 for (int i = 0; i < set.NumImgs; i++) {
                     set.Indices.Add(i);
                 }
-                Shuffle(set.Indices, r);
+                Ramjet.Utils.Shuffle(set.Indices, ref rng);
             }
 
             Batch b = new Batch(size);
@@ -103,17 +104,6 @@ namespace NNClassic.Mnist {
             UnityEngine.Profiling.Profiler.EndSample();
 
             return b;
-        }
-
-        public static void Shuffle<T>(IList<T> list, System.Random r) {
-            int n = list.Count;
-            while (n > 1) {
-                n--;
-                int k = r.Next(n + 1);
-                T value = list[k];
-                list[k] = list[n];
-                list[n] = value;
-            }
         }
 
         public static void ToTexture(Dataset set, int imgIndex, Texture2D tex) {
