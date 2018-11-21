@@ -38,8 +38,6 @@ public class LocoApplication : MonoBehaviour {
     private NeuralNetUpdateWorker[] _neuralNetUpdateWorkers;
     private WaitHandle[] _neuralNetUptdateWaitHandles;
 
-    [SerializeField] private NeuralNetRenderer _netRenderer;
-
     public static float EpisodeTime { get; private set; }
 
     private void Awake() {
