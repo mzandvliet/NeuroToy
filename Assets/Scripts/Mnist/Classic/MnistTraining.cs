@@ -2,12 +2,13 @@
 using Unity.Collections;
 using UnityEngine;
 using NNClassic.Mnist;
+using Rng = Unity.Mathematics.Random;
 
 public class MnistTraining : MonoBehaviour {
     private Texture2D _tex;
     private int _label;
 
-    private System.Random _random;
+    private Rng _rng;
     
     private Network _net;
     private Network _gradientBucket; // Hack used to store average gradients for minibatch
@@ -20,7 +21,7 @@ public class MnistTraining : MonoBehaviour {
 
     private void Awake() {
         Application.runInBackground = true;
-        _random = new System.Random();
+        _rng = new Rng(1234);
 
         DataManager.Load();
 
@@ -34,7 +35,7 @@ public class MnistTraining : MonoBehaviour {
         _net = NetBuilder.Build(def);
         _gradientBucket = NetBuilder.Build(def);
 
-        NetUtils.RandomGaussian(_net, _random);
+        NetUtils.RandomGaussian(_net, ref _rng);
 
         _renderer.SetTarget(_net);
 
@@ -83,7 +84,7 @@ public class MnistTraining : MonoBehaviour {
         int correctTrainLabels = 0;
 
         ZeroGradients(_gradientBucket);
-        var trainBatch = DataManager.GetBatch(batchSize, DataManager.Train, _random);
+        var trainBatch = DataManager.GetBatch(batchSize, DataManager.Train, ref _rng);
         for (int i = 0; i < trainBatch.Indices.Length; i++) {
             int lbl = DataManager.Train.Labels[trainBatch.Indices[i]];
 

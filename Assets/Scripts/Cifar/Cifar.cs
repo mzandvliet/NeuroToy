@@ -3,6 +3,7 @@ using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
 using Unity.Jobs;
+using Rng = Unity.Mathematics.Random;
 
 namespace NNBurst.Cifar {
     public struct Dataset : System.IDisposable {
@@ -94,7 +95,7 @@ namespace NNBurst.Cifar {
             }
         }
 
-        public static void GetBatch(NativeArray<int> batch, Dataset set, System.Random r) {
+        public static void GetBatch(NativeArray<int> batch, Dataset set, ref Rng rng) {
             // Todo: can transform dataset to create additional variation
 
             UnityEngine.Profiling.Profiler.BeginSample("GetBatch");
@@ -104,7 +105,7 @@ namespace NNBurst.Cifar {
                 for (int i = 0; i < set.NumImgs; i++) {
                     set.Indices.Add(i);
                 }
-                Shuffle(set.Indices, r);
+                Ramjet.Utils.Shuffle(set.Indices, ref rng);
             }
 
             for (int i = 0; i < batch.Length; i++) {
@@ -113,17 +114,6 @@ namespace NNBurst.Cifar {
             }
 
             UnityEngine.Profiling.Profiler.EndSample();
-        }
-
-        public static void Shuffle<T>(IList<T> list, System.Random r) {
-            int n = list.Count;
-            while (n > 1) {
-                n--;
-                int k = r.Next(n + 1);
-                T value = list[k];
-                list[k] = list[n];
-                list[n] = value;
-            }
         }
 
         public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Cifar.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {

@@ -3,6 +3,7 @@ using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
 using Unity.Jobs;
+using Rng = Unity.Mathematics.Random;
 
 namespace NNBurst.Mnist {
     public struct Dataset : System.IDisposable {
@@ -87,7 +88,7 @@ namespace NNBurst.Mnist {
             return set;
         }
 
-        public static void GetBatch(NativeArray<int> batch, Dataset set, System.Random r) {
+        public static void GetBatch(NativeArray<int> batch, Dataset set, ref Rng rng) {
             // Todo: can transform dataset to create additional variation
 
             UnityEngine.Profiling.Profiler.BeginSample("GetBatch");
@@ -97,7 +98,7 @@ namespace NNBurst.Mnist {
                 for (int i = 0; i < set.NumImgs; i++) {
                     set.Indices.Add(i);
                 }
-                Shuffle(set.Indices, r);
+                Shuffle(set.Indices, rng);
             }
 
             for (int i = 0; i < batch.Length; i++) {
@@ -108,11 +109,12 @@ namespace NNBurst.Mnist {
             UnityEngine.Profiling.Profiler.EndSample();
         }
 
-        public static void Shuffle<T>(IList<T> list, System.Random r) {
+        // Todo: native containers
+        public static void Shuffle<T>(IList<T> list, Rng rng) {
             int n = list.Count;
             while (n > 1) {
                 n--;
-                int k = r.Next(n + 1);
+                int k = rng.NextInt(n + 1);
                 T value = list[k];
                 list[k] = list[n];
                 list[n] = value;

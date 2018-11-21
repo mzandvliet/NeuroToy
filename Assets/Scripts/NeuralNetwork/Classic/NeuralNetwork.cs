@@ -15,6 +15,7 @@ using System.IO;
 using UnityEngine;
 using Random = System.Random;
 using NNClassic;
+using Rng = Unity.Mathematics.Random;
 
 public enum ActivationType {
     Sigmoid,
@@ -103,11 +104,11 @@ public static class NetBuilder {
             Func<float, float> activationD = null;
             switch (definition.Layers[i].ActivationType) {
                 case ActivationType.Sigmoid:
-                    activation = Utils.Sigmoid;
-                    activationD = Utils.SigmoidD;
+                    activation = Ramjet.Mathematics.Math.Sigmoid;
+                    activationD = Ramjet.Mathematics.Math.SigmoidD;
                     break;
                 case ActivationType.Tanh:
-                    activation = Utils.Tanh;
+                    activation = Unity.Mathematics.math.tanh;
                     activationD = null; // Todo:
                     break;
             }
@@ -404,10 +405,10 @@ public static class NetUtils {
         }
     }
 
-    public static void RandomGaussian(Network network, Random r) {
+    public static void RandomGaussian(Network network, ref Rng r) {
         for (int l = 0; l < network.Layers.Count; l++) {
             for (int p = 0; p < network.Layers[l].ParamCount; p++) {
-                network.Layers[l][p] = Utils.Gaussian(r, 0f, 1f);
+                network.Layers[l][p] = Ramjet.Mathematics.Math.Gaussian(ref r, 0f, 1f);
             }
         }
     }
@@ -496,11 +497,11 @@ public static class NetUtils {
 
     #region Genetic Algorithm
 
-    public static void CrossOver(Network a, Network b, Network c, Random r) {
+    public static void CrossOver(Network a, Network b, Network c, ref Rng r) {
         for (int l = 0; l < c.Layers.Count; l++) {
             int paramsLeft = c.Layers[l].ParamCount;
             while (paramsLeft > 0) {
-                int copySeqLength = Math.Min(r.Next(4, 16), paramsLeft);
+                int copySeqLength = Math.Min(r.NextInt(4, 16), paramsLeft);
                 Network parent = r.NextDouble() < 0.5f ? a : b;
                 for (int p = 0; p < copySeqLength; p++) {
                     c.Layers[l][p] = parent.Layers[l][p];
@@ -510,11 +511,11 @@ public static class NetUtils {
         }
     }
 
-    public static void Mutate(Network network, float chance, float magnitude, Random r) {
+    public static void Mutate(Network network, float chance, float magnitude, ref Rng r) {
         for (int l = 0; l < network.Layers.Count; l++) {
             for (int p = 0; p < network.Layers[l].ParamCount; p++) {
                 if (r.NextDouble() < chance) {
-                    network.Layers[l][p] = Mathf.Clamp(network.Layers[l][p] + Utils.Gaussian(r, 0.0, 1.0) * magnitude, -PMax, PMax);
+                    network.Layers[l][p] = Mathf.Clamp(network.Layers[l][p] + Ramjet.Mathematics.Math.Gaussian(ref r, 0f, 1f) * magnitude, -PMax, PMax);
                 }
             }
         }

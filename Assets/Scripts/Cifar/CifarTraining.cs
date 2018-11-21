@@ -11,12 +11,13 @@ using Unity.Collections;
 using System.Collections.Generic;
 using NNBurst.Cifar;
 using DataManager = NNBurst.Cifar.DataManager;
+using Rng = Unity.Mathematics.Random;
 
 namespace NNBurst {
     public class CifarTraining : MonoBehaviour {
         [SerializeField] private bool _testEachEpoch;
 
-        System.Random _random;
+        Rng _rng;
 
         private FCNetwork _net;
         private FCGradients _gradients;
@@ -45,7 +46,7 @@ namespace NNBurst {
 
             DataManager.Load();
 
-            _random = new System.Random();
+            _rng = new Rng(1234);
 
             var config = new FCNetworkConfig();
             config.Layers.Add(new FCLayerConfig { Neurons = DataManager.ImgDims * DataManager.Channels });
@@ -54,7 +55,7 @@ namespace NNBurst {
             config.Layers.Add(new FCLayerConfig { Neurons = 10 });
 
             _net = new FCNetwork(config);
-            NeuralUtils.Initialize(_net, _random);
+            NeuralUtils.Initialize(_net, ref _rng);
 
             _gradients = new FCGradients(config);
             _gradientsAvg = new FCGradients(config);
@@ -127,7 +128,7 @@ namespace NNBurst {
 
             float avgTrainCost = 0f;
 
-            DataManager.GetBatch(_batch, DataManager.Train, _random);
+            DataManager.GetBatch(_batch, DataManager.Train, ref _rng);
 
             var handle = NeuralJobs.ZeroGradients(_gradientsAvg);
 

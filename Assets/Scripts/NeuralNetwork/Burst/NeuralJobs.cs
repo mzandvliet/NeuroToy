@@ -3,6 +3,8 @@ using Unity.Collections;
 using static Unity.Mathematics.math;
 using UnityEngine;
 using Unity.Burst;
+using Ramjet.Mathematics;
+using Rng = Unity.Mathematics.Random;
 
 /* Todo:
 Always flush schedule batches
@@ -24,15 +26,7 @@ So immediately we get to the interesting challenge of generating random numbers 
 
 namespace NNBurst {
     public static class NeuralMath {
-        // Quick and dirty, probably not great
-        public static float Gaussian(MTRandom random, float mean, float stddev) {
-            float x1 = 1f - random.NextFloat();
-            float x2 = 1f - random.NextFloat();
-
-            float y1 = sqrt(-2.0f * log(x1)) * cos(2.0f * Mathf.PI * x2);
-            return y1 * stddev + mean;
-        }
-
+        
         #region Activation Functions
 
         public static float Sigmoid(float x) {
@@ -55,9 +49,9 @@ namespace NNBurst {
 
         #region NativeArray Math
 
-        public static void RandomGaussian(System.Random random, NativeArray<float> values, float mean, float std) {
+        public static void RandomGaussian(ref Rng rng, NativeArray<float> values, float mean, float stddev) {
             for (int i = 0; i < values.Length; i++) {
-                values[i] = NNClassic.Utils.Gaussian(random, mean, std);
+                values[i] = Math.Gaussian(ref rng, mean, stddev);
             }
         }
 
@@ -94,7 +88,7 @@ namespace NNBurst {
             for (int i = 0; i < vector.Length; i++) {
                 sum += vector[i] * vector[i];
             }
-            return Unity.Mathematics.math.sqrt(sum);
+            return sqrt(sum);
         }
 
         public static bool IsEven(float x) {

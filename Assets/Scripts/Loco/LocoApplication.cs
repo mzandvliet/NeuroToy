@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
-using Random = System.Random;
+using Rng = Unity.Mathematics.Random;
 
 /*
  * Todo: Restore genepool notion
@@ -33,7 +33,7 @@ public class LocoApplication : MonoBehaviour {
     private int _episodeCount;
 
     private Network _genotype;
-    private readonly Random _random = new Random();
+    private Rng _rng = new Rng(1234);
 
     private NeuralNetUpdateWorker[] _neuralNetUpdateWorkers;
     private WaitHandle[] _neuralNetUptdateWaitHandles;
@@ -65,7 +65,7 @@ public class LocoApplication : MonoBehaviour {
         // Create a random genotype to seed the population
         Debug.Log("Network topology: " + _creatures[0].Body.NetDefinition);
         _genotype = NetBuilder.Build(_creatures[0].Body.NetDefinition);
-        NetUtils.RandomGaussian(_genotype, _random);
+        NetUtils.RandomGaussian(_genotype, ref _rng);
 
         PrepareNewEpisode();
         MutatePopulation();
@@ -243,7 +243,7 @@ public class LocoApplication : MonoBehaviour {
                 _creatures[i].Mind,
                 _mutationChance,
                 _mutationMagnitude,
-                _random);
+                ref _rng);
         }
     }
 

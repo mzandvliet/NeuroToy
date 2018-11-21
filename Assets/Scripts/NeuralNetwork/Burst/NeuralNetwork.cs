@@ -1,16 +1,16 @@
-
-
 using System.Collections.Generic;
 using Unity.Collections;
+using Rng = Unity.Mathematics.Random;
+using Ramjet.Mathematics;
 
 namespace NNBurst {
     public static class NeuralUtils {
-        public static void Initialize(FCNetwork net, System.Random random) {
+        public static void Initialize(FCNetwork net, ref Rng rng) {
             // Todo: init as jobs too. Needs Burst-compatible RNG.
 
             for (int l = 0; l < net.Layers.Length; l++) {
-                NeuralMath.RandomGaussian(random, net.Layers[l].Weights, 0f, 1f);
-                NeuralMath.RandomGaussian(random, net.Layers[l].Biases, 0f, 1f);
+                NeuralMath.RandomGaussian(ref rng, net.Layers[l].Weights, 0f, 1f);
+                NeuralMath.RandomGaussian(ref rng, net.Layers[l].Biases, 0f, 1f);
             }
         }
     }

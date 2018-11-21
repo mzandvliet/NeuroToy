@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Unity.Jobs;
 using DataManager = NNBurst.Mnist.DataManager;
 using NNBurst;
+using Rng = Unity.Mathematics.Random;
 
 /*
 
@@ -41,7 +42,7 @@ public class ConvTest : MonoBehaviour {
 
     private IList<Conv2DLayerTexture> _layerTex;
 
-    private System.Random _random;
+    private Rng _rng;
 
     private NativeArray<int> _batch;
     NativeArray<float> _targetOutputs;
@@ -57,7 +58,7 @@ public class ConvTest : MonoBehaviour {
     const int BatchSize = 10;
     
     private void Awake() {
-        _random = new System.Random();
+        _rng = new Rng(1234);
 
         DataManager.Load();
 
@@ -80,12 +81,12 @@ public class ConvTest : MonoBehaviour {
         // Parameter initialization
 
         for (int i = 0; i < _layers.Count; i++) {
-            NeuralMath.RandomGaussian(_random, _layers[i].Kernel, 0f, 0.25f);
-            NeuralMath.RandomGaussian(_random, _layers[i].Bias, 0f, 0.1f);
+            NeuralMath.RandomGaussian(ref _rng, _layers[i].Kernel, 0f, 0.25f);
+            NeuralMath.RandomGaussian(ref _rng, _layers[i].Bias, 0f, 0.1f);
         }
 
-        NeuralMath.RandomGaussian(_random, _fcLayer.Biases, 0f, 0.1f);
-        NeuralMath.RandomGaussian(_random, _fcLayer.Weights, 0f, 0.1f);
+        NeuralMath.RandomGaussian(ref _rng, _fcLayer.Biases, 0f, 0.1f);
+        NeuralMath.RandomGaussian(ref _rng, _fcLayer.Weights, 0f, 0.1f);
 
         // Create debug textures
 
@@ -129,7 +130,7 @@ public class ConvTest : MonoBehaviour {
 
         float avgTrainCost = 0f;
 
-        DataManager.GetBatch(_batch, DataManager.Train, _random);
+        DataManager.GetBatch(_batch, DataManager.Train, ref _rng);
 
         // var h = NeuralJobs.ZeroGradients(_gradientsAvg);
         var h = new JobHandle();
