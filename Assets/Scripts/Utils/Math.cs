@@ -1,3 +1,4 @@
+using Unity.Collections;
 using Unity.Mathematics;
 using Rng = Unity.Mathematics.Random;
 
@@ -55,6 +56,14 @@ namespace Ramjet.Mathematics {
 
         public static float2 GetUnitVector(float rotation) {
             return new float2(math.sin(rotation), math.cos(rotation));
+        }
+
+        /* Native Container Helpers */
+
+        public static void FillConstant(NativeArray<float> array, float value) {
+            for (int i = 0; i < array.Length; i++) {
+                array[i] = value;
+            }
         }
     }
 }

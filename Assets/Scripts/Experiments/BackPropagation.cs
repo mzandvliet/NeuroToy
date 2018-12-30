@@ -1,141 +1,196 @@
+using Unity.Collections;
 using UnityEngine;
+using Ramjet.Mathematics;
+using System.Collections.Generic;
 
 /* 
-    Let's make some nodes. 
+    Todo:
 
-    they're all some f(a, b) thing with a forward
-    calculation path, and given a gradient can
-    route it back through, with respect to any
-    of the inputs.
+    Flesh this out into a thing that lets you compose forward/backward nets and backprop them easily.
 
-    We build a graph of these nodes, then execute
-    operations on them.
+    Make backprop state separate, we don't always need or want it around.
 */
 
 namespace BackPropPractice {
     public class BackPropagation : MonoBehaviour {
 
         private void Awake() {
-            var a = new ConstNode(5f);
-            var b = new ConstNode(3f);
-            var add1 = new AddNode(a, b);
+            const int layerSize = 16;
 
-            var c = new ConstNode(-2f);
-            var add2 = new MultiplyNode(add1, c);
+            var a = new ConstNode(layerSize);
+            Math.FillConstant(a.Output, 3f);
+            var b = new ConstNode(layerSize);
+            Math.FillConstant(b.Output, 2f);
+            var op1 = new AddNode(a, b);
+
+            var c = new ConstNode(layerSize);
+            Math.FillConstant(c.Output, -5f);
+            var op2 = new MultiplyNode(op1, c);
+
+            var t = new NativeArray<float>(layerSize, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            Math.FillConstant(t, 15f);
 
             const float rate = 0.01f;
 
-            for (int i = 0; i < 10; i++) {
-                float result = add2.Forward();
-                float target = 15f;
+            // Todo: automatically traverse graph
+            Forward(op2);
 
-                float dLdAdd2 = target - result; // Note: get from SumSquareLoss node
-                
-                float dLdC = add2.BackwardB(dLdAdd2);
-                float dLdAdd1 = add2.BackwardA(dLdAdd2);
+            Debug.Log(op2.Output[0]);
 
-                float dLdA = add1.BackwardA(dLdAdd1);
-                float dLdB = add1.BackwardB(dLdAdd1);
+            // float dLdAdd2 = target - result; // Note: get from SumSquareLoss node
+            
+            // float dLdC = add2.BackwardB(dLdAdd2);
+            // float dLdAdd1 = add2.BackwardA(dLdAdd2);
 
-                Debug.Log("(" + a.Value + " + " + b.Value + ") + " + c.Value + " = " + result);
+            // float dLdA = add1.BackwardA(dLdAdd1);
+            // float dLdB = add1.BackwardB(dLdAdd1);
 
-                a.Value += dLdA * rate;
-                b.Value += dLdB * rate;
-                c.Value += dLdC * rate;
+            // Debug.Log("(" + a.Value + " + " + b.Value + ") + " + c.Value + " = " + result);
+
+            // a.Value += dLdA * rate;
+            // b.Value += dLdB * rate;
+            // c.Value += dLdC * rate;
+
+            a.Dispose();
+            b.Dispose();
+            op1.Dispose();
+            c.Dispose();
+            op2.Dispose();
+            t.Dispose();
+        }
+
+        private static void Forward(IFloatNode network) {
+            // input node represents last output node in network
+            // we traverse it back-to-front, breadth-first, to
+            // construct an ordered update list
+            // not the coolest or most correct, but will work
+
+            var nodeList = new List<IFloatNode>();
+
+            var nodes = new Stack<IFloatNode>();
+            nodes.Push(network);
+            while (nodes.Count != 0) {
+                var n = nodes.Pop();
+                nodeList.Add(n);
+                for (int i = 0; i < n.Inputs.Length; i++) {
+                    nodes.Push(n.Inputs[i]);
+                }
+            }
+
+            nodeList.Reverse();
+
+            for (int i = 0; i < nodeList.Count; i++) {
+                nodeList[i].Forward();
             }
         }
     }
 
-    public interface IFloatNode {
-        float Value {
-            get;
-        }
+    public interface IFloatNode : System.IDisposable {
+        NativeArray<float> Output { get; }
 
-        float Forward();
+        IFloatNode[] Inputs { get; }
+
+        void Forward();
     }
 
     public class ConstNode : IFloatNode {
-        public float Value {
-            get;
-            set;
+        public NativeArray<float> Output { get; private set; }
+
+        public IFloatNode[] Inputs { get; private set; }
+
+        public ConstNode(int size) {
+            Output = new NativeArray<float>(size, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+            Inputs = new IFloatNode[0];
         }
 
-        public ConstNode(float value) {
-            Value = value;
+        public void Dispose() {
+            Output.Dispose();
         }
 
-        public float Forward() {
-            return Value;
+        public void Forward() {
+            // Do nothing
         }
     }
 
     public class AddNode : IFloatNode {
-        public float Value {
-            get;
-            private set;
-        }
+        private NativeArray<float> _output;
+        public NativeArray<float> Output { get { return _output; } }
 
-        public IFloatNode A {
-            get;
-            private set;
-        }
-
-        public IFloatNode B {
-            get;
-            private set;
-        }
+        public IFloatNode[] Inputs { get; private set; }
 
         public AddNode(IFloatNode a, IFloatNode b) {
-            A = a;
-            B = b;
+            if (a.Output.Length != b.Output.Length) {
+                throw new System.ArgumentException(string.Format("Output size A {0} is not equal to output size B {1}", a.Output.Length, b.Output.Length));
+            }
+            _output = new NativeArray<float>(a.Output.Length, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+
+            Inputs = new IFloatNode[2];
+            Inputs[0] = a;
+            Inputs[1] = b;
         }
 
-        public float Forward() {
-            Value = A.Forward() + B.Forward();
-            return Value;
+        public void Dispose() {
+            Output.Dispose();
         }
 
-        public float BackwardA(float grad) {
-            return grad * 1f;
+        public void Forward() {
+            for (int i = 0; i < Output.Length; i++) {
+                _output[i] = Inputs[0].Output[i] + Inputs[1].Output[i];
+            }
         }
 
-        public float BackwardB(float grad) {
-            return grad * 1f;
+        // Todo: put these in separate nodes?
+
+        public void BackwardA(NativeArray<float> gradIn, NativeArray<float> gradOut) {
+            for (int i = 0; i < gradIn.Length; i++) {
+                gradOut[i] = gradIn[i];// * 1f;
+            }
+        }
+
+        public void BackwardB(NativeArray<float> gradIn, NativeArray<float> gradOut) {
+            for (int i = 0; i < gradIn.Length; i++) {
+                gradOut[i] = gradIn[i];// * 1f;
+            }
         }
     }
 
     public class MultiplyNode : IFloatNode {
-        public float Value {
-            get;
-            private set;
-        }
+        private NativeArray<float> _output;
+        public NativeArray<float> Output { get { return _output; } }
 
-        public IFloatNode A {
-            get;
-            private set;
-        }
-
-        public IFloatNode B {
-            get;
-            private set;
-        }
+        public IFloatNode[] Inputs { get; private set; }
 
         public MultiplyNode(IFloatNode a, IFloatNode b) {
-            A = a;
-            B = b;
+            if (a.Output.Length != b.Output.Length) {
+                throw new System.ArgumentException(string.Format("Output size A {0} is not equal to output size B {1}", a.Output.Length, b.Output.Length));
+            }
+            _output = new NativeArray<float>(a.Output.Length, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+
+            Inputs = new IFloatNode[2];
+            Inputs[0] = a;
+            Inputs[1] = b;
         }
 
-        public float Forward() {
-            Value = A.Forward() * B.Forward();
-            return Value;
+        public void Dispose() {
+            Output.Dispose();
         }
 
-        public float BackwardA(float grad) {
-            return grad * B.Value;
+        public void Forward() {
+            for (int i = 0; i < Output.Length; i++) {
+                _output[i] = Inputs[0].Output[i] * Inputs[1].Output[i];
+            }
         }
 
-        public float BackwardB(float grad) {
-            return grad * A.Value;
+        public void BackwardA(NativeArray<float> gradIn, NativeArray<float> gradOut) {
+            for (int i = 0; i < gradIn.Length; i++) {
+                gradOut[i] = gradIn[i] * Inputs[1].Output[i];
+            }
+        }
+
+        public void BackwardB(NativeArray<float> gradIn, NativeArray<float> gradOut) {
+            for (int i = 0; i < gradIn.Length; i++) {
+                gradOut[i] = gradIn[i] * Inputs[0].Output[i];
+            }
         }
     }
 
