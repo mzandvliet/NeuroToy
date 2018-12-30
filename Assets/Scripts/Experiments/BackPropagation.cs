@@ -23,7 +23,7 @@ namespace BackPropPractice {
             var c = new ConstNode(-2f);
             var add2 = new MultiplyNode(add1, c);
 
-            const float rate = 0.1f;
+            const float rate = 0.01f;
 
             for (int i = 0; i < 10; i++) {
                 float result = add2.Forward();
