@@ -68,10 +68,12 @@ namespace NNBurst.Mnist {
         public const int ImgDims = Width * Height;
         public const int Channels = 1;
 
-        public static void Load() {
+        public static void LoadFloatData() {
             TrainFloats = LoadAsFloats(TrainImagePath, TrainLabelPath);
             TestFloats = LoadAsFloats(TestImagePath, TestLabelPath);
+        }
 
+        public static void LoadByteData() {
             TrainBytes = LoadAsBytes(TrainImagePath, TrainLabelPath);
             TestBytes = LoadAsBytes(TestImagePath, TestLabelPath);
         }

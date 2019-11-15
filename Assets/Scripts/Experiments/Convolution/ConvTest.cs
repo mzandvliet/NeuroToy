@@ -60,7 +60,7 @@ public class ConvTest : MonoBehaviour {
     private void Awake() {
         _rng = new Rng(1234);
 
-        DataManager.Load();
+        DataManager.LoadFloatData();
 
         // Create convolution layers
 

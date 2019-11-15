@@ -14,6 +14,12 @@ using System;
     - Information-preserving normalization & scaling strategies to replace Float and Softmax
         - Input set energy analysis
 
+    - Wavelet-like input object representation that models energies in common input image energy bounds
+        - Or curve fits, for sure
+
+    - Consider making it logically impossible to pass a zero-energy signal, or any signals over
+    max-energy threshold
+
     ===============
 
     MNIST inputs are 28x28 unsigned bytes, let's attempt to utilize that compactness by
@@ -72,6 +78,15 @@ using System;
 
     Code generation would be the best approach for creating optimal circuitry here
     Desired functions could be generated on the fly.
+
+
+    ---
+
+    Funny... I remember when a few years ago I first studied basic neural network stuff
+    I was very bemused with any fussing about input value distributions, preprocessing
+    and normalizing it. Looking back, that was so incredibly naive. Yet, crucially,
+    I had to discover for myself the information-theoretical reasons for the fuss. And
+    now that I have, it looks like we ought to be fussing over it a lot more still.
  */
 public class FixedPointNetwork : MonoBehaviour {
     private NativeArray<byte> _l0_outputs;
@@ -90,6 +105,8 @@ public class FixedPointNetwork : MonoBehaviour {
     const int _l2_numNeurons = 10; // output dimensions
 
     private void Awake() {
+        NNBurst.Mnist.DataManager.LoadByteData();
+
         // Allocate
 
         _l0_outputs = new NativeArray<byte>(_l0_numNeurons, Allocator.Persistent);
@@ -108,8 +125,99 @@ public class FixedPointNetwork : MonoBehaviour {
         InitializeWeights(_l1_weights, ref rng);
         InitializeWeights(_l2_weights, ref rng);
 
-        NNBurst.Mnist.DataManager.Load();
+        AnalyzeMnistEnergyBounds();
+        ForwardPass();
+    }
 
+    private void OnDestroy() {
+        _l0_outputs.Dispose();
+
+        _l1_accumulators.Dispose();
+        _l1_outputs.Dispose();
+        _l1_weights.Dispose();
+
+        _l2_accumulators.Dispose();
+        _l2_outputs.Dispose();
+        _l2_weights.Dispose();
+    }
+
+    private static void AnalyzeMnistEnergyBounds() {
+        const int ImgPixCount = 28 * 28;
+
+        const int MinEnergyLimit = ImgPixCount * 0;
+        const int MaxEnergyLimit = ImgPixCount * 256;
+
+        Debug.Log("Minimum possible energy per image: " + MinEnergyLimit);
+        Debug.Log("Maximum possible energy per image: " + MaxEnergyLimit);
+
+        int imgCount = NNBurst.Mnist.DataManager.TrainBytes.NumImgs;
+        var imgs = NNBurst.Mnist.DataManager.TrainBytes.Images;
+
+        uint lowestEnergy = uint.MaxValue;
+        uint highestEnergy = 0;
+        ulong totalEnergy = 0;
+
+        for (int i = 0; i < imgCount; i++) {
+            uint energy = 0;
+            for (int p = 0; p < ImgPixCount; p++) {
+                energy += imgs[i * ImgPixCount + p];
+            }
+
+            if (energy > highestEnergy) {
+                highestEnergy = energy;
+            }
+            if (energy < lowestEnergy) {
+                lowestEnergy = energy;
+            }
+
+            totalEnergy += energy;
+        }
+
+        double averageEnergy = totalEnergy / (double)imgCount;
+
+        Debug.LogFormat("Energy bounds: [{0}, {1}]", lowestEnergy, highestEnergy);
+        Debug.LogFormat("Average energy: {0}", averageEnergy);
+
+        Debug.LogFormat("As normalized:");
+        Debug.LogFormat("Energy bounds: [{0}, {1}]", lowestEnergy / (double)MaxEnergyLimit, highestEnergy / (double)MaxEnergyLimit);
+        Debug.LogFormat("Average energy: {0}", averageEnergy / (double)MaxEnergyLimit);
+
+        Debug.LogFormat("As log2:");
+        Debug.LogFormat("Energy bounds: [{0}, {1}]", math.log2(lowestEnergy), math.log2(highestEnergy));
+        Debug.LogFormat("Average energy: {0}", math.log2(averageEnergy));
+
+        /*
+        Outputs:
+
+        Minimum possible energy per image: 0
+        Maximum possible energy per image: 200704
+
+        Energy bounds: [5086, 79483]
+        Average energy: 26121,6424166667
+
+        As normalized:
+        Energy bounds: [0,0253408003826531, 0,396021006058673]
+        Average energy: 0,130150083788398
+
+        As log2:
+        Energy bounds: [12,31232, 16,27836]
+        Average energy: 14,6729579897526
+
+        ----
+
+        We can see that while any pixel can peak to 255, expected
+        total energies for Mnist inputs tends to be very low. 
+
+        Indeed, most pixels will remain fully black for any image.
+
+        Our computational process should be able to reflect this
+        sparseness.
+
+        This also helps us design our activation and scaling functions.
+        */
+    }
+
+    private void ForwardPass() {
         // Input layer
 
         NNBurst.Mnist.DataManager.CopyBytesToInput(_l0_outputs, NNBurst.Mnist.DataManager.TrainBytes, 0);
@@ -140,18 +248,6 @@ public class FixedPointNetwork : MonoBehaviour {
         }
 
         Debug.Log("Predicted label: " + GetHighestOutputIndex(_l2_outputs));
-    }
-
-    private void OnDestroy() {
-        _l0_outputs.Dispose();
-
-        _l1_accumulators.Dispose();
-        _l1_outputs.Dispose();
-        _l1_weights.Dispose();
-
-        _l2_accumulators.Dispose();
-        _l2_outputs.Dispose();
-        _l2_weights.Dispose();
     }
 
     private static void InitializeWeights(NativeSlice<sbyte> weights, ref Rng rng) {

@@ -41,7 +41,7 @@ namespace NNBurst {
         private void Awake() {
             Application.runInBackground = true;
 
-            DataManager.Load();
+            DataManager.LoadFloatData();
 
             _rng = new Rng(1234);
 
