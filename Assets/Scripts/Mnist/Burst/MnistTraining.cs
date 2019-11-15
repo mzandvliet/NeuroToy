@@ -64,17 +64,17 @@ namespace NNBurst {
 
             // Visual test of data
             const int testImgIdx = 18;
-            _label = DataManager.Train.Labels[testImgIdx];
+            _label = DataManager.TrainFloats.Labels[testImgIdx];
             _tex = new Texture2D(DataManager.Width, DataManager.Height, TextureFormat.ARGB32, false, true);
             _tex.filterMode = FilterMode.Point;
-            DataManager.ToTexture(DataManager.Train, testImgIdx, _tex);
+            DataManager.ToTexture(DataManager.TrainFloats, testImgIdx, _tex);
 
             Test();
         }
 
         private void Update() {
             if (_epochCount < 30) {
-                if (_batchCount < DataManager.Train.Labels.Length/BatchSize) {
+                if (_batchCount < DataManager.TrainFloats.Labels.Length/BatchSize) {
                     for (int i = 0; i < 100; i++) {
                         TrainMinibatch();
                     }
@@ -97,7 +97,7 @@ namespace NNBurst {
             GUILayout.BeginVertical(GUI.skin.box);
             {
                 GUILayout.Label("Epoch: " + _epochCount);
-                GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.Train.Labels.Length / BatchSize));
+                GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.TrainFloats.Labels.Length / BatchSize));
                 GUILayout.Label("Train Loss: " + _trainingLoss);
                 GUILayout.Label("Rate: " + _rate);
             }
@@ -124,15 +124,15 @@ namespace NNBurst {
 
             float avgTrainCost = 0f;
 
-            DataManager.GetBatch(_batch, DataManager.Train, ref _rng);
+            DataManager.GetBatch(_batch, DataManager.TrainFloats, ref _rng);
 
             var handle = NeuralJobs.ZeroGradients(_gradientsAvg);
 
             for (int i = 0; i < _batch.Length; i++) {
-                handle = DataManager.CopyInput(_net.Inputs, DataManager.Train, _batch[i], handle);
+                handle = DataManager.CopyInput(_net.Inputs, DataManager.TrainFloats, _batch[i], handle);
                 handle = NeuralJobs.ForwardPass(_net, handle);
 
-                int lbl = DataManager.Train.Labels[_batch[i]];
+                int lbl = DataManager.TrainFloats.Labels[_batch[i]];
                 handle.Complete();
                 NeuralMath.ClassToOneHot(lbl, _targetOutputs); // Todo: job
 
@@ -163,10 +163,10 @@ namespace NNBurst {
             UnityEngine.Profiling.Profiler.BeginSample("Test");
 
             int correctTestLabels = 0;
-            for (int i = 0; i < DataManager.Test.NumImgs; i++) {
-                int lbl = DataManager.Test.Labels[i];
+            for (int i = 0; i < DataManager.TestFloats.NumImgs; i++) {
+                int lbl = DataManager.TestFloats.Labels[i];
 
-                var handle = DataManager.CopyInput(_net.Inputs, DataManager.Test, i);
+                var handle = DataManager.CopyInput(_net.Inputs, DataManager.TestFloats, i);
                 handle = NeuralJobs.ForwardPass(_net, handle);
                 handle.Complete();
 
@@ -176,7 +176,7 @@ namespace NNBurst {
                 }
             }
 
-            float accuracy = correctTestLabels / (float)DataManager.Test.NumImgs;
+            float accuracy = correctTestLabels / (float)DataManager.TestFloats.NumImgs;
             Debug.Log("Test Accuracy: " + System.Math.Round(accuracy * 100f, 4) + "%");
 
             UnityEngine.Profiling.Profiler.EndSample();

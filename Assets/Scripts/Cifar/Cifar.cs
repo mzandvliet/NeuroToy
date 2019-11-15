@@ -117,7 +117,7 @@ namespace NNBurst.Cifar {
         }
 
         public static JobHandle CopyInput(NativeArray<float> inputs, NNBurst.Cifar.Dataset set, int imgIdx, JobHandle handle = new JobHandle()) {
-            var copyInputJob = new CopySubsetJob();
+            var copyInputJob = new CopySubsetJob<float>();
             copyInputJob.From = set.Images;
             copyInputJob.To = inputs;
             copyInputJob.Length = ImgDims * Channels;

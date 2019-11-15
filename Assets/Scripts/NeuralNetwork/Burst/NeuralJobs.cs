@@ -251,9 +251,9 @@ namespace NNBurst {
     }
 
     [BurstCompile]
-    public struct CopySubsetJob : IJob {
-        [ReadOnly] public NativeArray<float> From;
-        [WriteOnly] public NativeArray<float> To;
+    public struct CopySubsetJob<T> : IJob where T : struct {
+        [ReadOnly] public NativeArray<T> From;
+        [WriteOnly] public NativeArray<T> To;
         [ReadOnly] public int FromStart;
         [ReadOnly] public int Length;
         [ReadOnly] public int ToStart;

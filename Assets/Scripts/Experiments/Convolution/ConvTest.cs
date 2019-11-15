@@ -130,17 +130,17 @@ public class ConvTest : MonoBehaviour {
 
         float avgTrainCost = 0f;
 
-        DataManager.GetBatch(_batch, DataManager.Train, ref _rng);
+        DataManager.GetBatch(_batch, DataManager.TrainFloats, ref _rng);
 
         // var h = NeuralJobs.ZeroGradients(_gradientsAvg);
         var h = new JobHandle();
 
         for (int i = 0; i < _batch.Length; i++) {
-            h = DataManager.CopyInput(_input, DataManager.Train, _batch[i], h);
+            h = DataManager.CopyInput(_input, DataManager.TrainFloats, _batch[i], h);
             h = ConvolutionJobs.ForwardPass(_input, _layers, h);
             h = ConvolutionJobs.ForwardPass(_layers[_layers.Count-1].output, _fcLayer, h);
 
-            int targetLbl = (int)DataManager.Train.Labels[_batch[i]];
+            int targetLbl = (int)DataManager.TrainFloats.Labels[_batch[i]];
             h.Complete();
             NeuralMath.ClassToOneHot(targetLbl, _targetOutputs); // Todo: job
 
@@ -180,7 +180,7 @@ public class ConvTest : MonoBehaviour {
         GUILayout.BeginVertical(GUI.skin.box);
         {
             GUILayout.Label("Epoch: " + _epochCount);
-            GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.Train.Labels.Length / BatchSize));
+            GUILayout.Label("Batch: " + _batchCount + "/" + (DataManager.TrainFloats.Labels.Length / BatchSize));
             GUILayout.Label("Train Loss: " + _trainingLoss);
             GUILayout.Label("Rate: " + _rate);
         }
