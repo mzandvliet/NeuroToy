@@ -175,16 +175,25 @@ public class FixedPointNetwork : MonoBehaviour {
 
         double averageEnergy = totalEnergy / (double)imgCount;
 
-        Debug.LogFormat("Energy bounds: [{0}, {1}]", lowestEnergy, highestEnergy);
-        Debug.LogFormat("Average energy: {0}", averageEnergy);
+        Debug.LogFormat("Energy bounds: [{0}, {1}], dynamic range: {2}",
+            lowestEnergy,
+            highestEnergy,
+            highestEnergy - lowestEnergy);
+        Debug.LogFormat("Average energy: {0:0.000}", averageEnergy);
 
         Debug.LogFormat("As normalized:");
-        Debug.LogFormat("Energy bounds: [{0}, {1}]", lowestEnergy / (double)MaxEnergyLimit, highestEnergy / (double)MaxEnergyLimit);
-        Debug.LogFormat("Average energy: {0}", averageEnergy / (double)MaxEnergyLimit);
+        Debug.LogFormat("Energy bounds: [{0:0.000}, {1:0.000}], dynamic range: {2:0.000}",
+            lowestEnergy / (double)MaxEnergyLimit,
+            highestEnergy / (double)MaxEnergyLimit,
+            (highestEnergy - lowestEnergy) / (double)MaxEnergyLimit);
+        Debug.LogFormat("Average energy: {0:0.000}", averageEnergy / (double)MaxEnergyLimit);
 
         Debug.LogFormat("As log2:");
-        Debug.LogFormat("Energy bounds: [{0}, {1}]", math.log2(lowestEnergy), math.log2(highestEnergy));
-        Debug.LogFormat("Average energy: {0}", math.log2(averageEnergy));
+        Debug.LogFormat("Energy bounds: [{0:0.000}, {1:0.000}], dynamic range: {2:0.000}",
+            math.log2(lowestEnergy),
+            math.log2(highestEnergy),
+            math.log2(highestEnergy - lowestEnergy));
+        Debug.LogFormat("Average energy: {0:0.000}", math.log2(averageEnergy));
 
         /*
         Outputs:
