@@ -28,10 +28,10 @@ namespace Ramjet {
         }
 
         public static void GenerateTerrain(Terrain terrain) {
-            float[,] heights = new float[terrain.terrainData.heightmapWidth, terrain.terrainData.heightmapHeight];
-            for (int x = 0; x < terrain.terrainData.heightmapWidth; x++) {
-                for (int y = 0; y < terrain.terrainData.heightmapWidth; y++) {
-                    float ruggedness = Mathf.Pow(y / (float)terrain.terrainData.heightmapHeight, 3f);
+            float[,] heights = new float[terrain.terrainData.heightmapResolution, terrain.terrainData.heightmapResolution];
+            for (int x = 0; x < terrain.terrainData.heightmapResolution; x++) {
+                for (int y = 0; y < terrain.terrainData.heightmapResolution; y++) {
+                    float ruggedness = Mathf.Pow(y / (float)terrain.terrainData.heightmapResolution, 3f);
                     heights[y, x] =
                         ruggedness +
                         UnityEngine.Random.value * 0.003f * ruggedness;

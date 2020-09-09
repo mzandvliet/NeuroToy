@@ -16,6 +16,8 @@ using System;
 
     - Wavelet-like input object representation that models energies in common input image energy bounds
         - Or curve fits, for sure
+        - We state at type level: an input to this system has an energy bound of [min,max], such that
+        no confusion can occur
 
     - Consider making it logically impossible to pass a zero-energy signal, or any signals over
     max-energy threshold
