@@ -26,10 +26,10 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     private Texture2D _scaleogramTex;
 
-    const int _numPixPerScale = 4096/2;
-    const int _numScales = 512;
+    const int _numPixPerScale = 4096;
+    const int _numScales = 1024;
     // const float _scalePowBase = 1.071f; // for 128
-    const float _scalePowBase = 1.01f; // for 1024
+    const float _scalePowBase = 1.009f; // for 1024
 
     private void Awake() {
         int sr = _clip.frequency;
@@ -50,7 +50,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
         for (int scale = 0; scale < _numScales; scale++) {
-            float freq = 20f + Mathf.Pow(1.017f, scale); // power law
+            float freq = 20f + Mathf.Pow(_scalePowBase, scale); // power law
             // float freq = math.lerp(1f, sr * 0.5f, scale / (float)_numScales); // linear
             Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
 
@@ -143,7 +143,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float dotSum = 0f;
 
             for (int i = 0; i < smpPerPix; i+=windowStride) {
-                var windowJitter = 0;//rng.NextInt(smpPerPeriod >> 2);
+                var windowJitter = 0;//rng.NextInt(smpPerPeriod >> 8);
 
                 float waveDot = 0f;
                 for (int w = 0; w < smpPerWave && p * smpPerPix + (i+1) * smpPerWave + windowJitter < signal.Length; w++) {
@@ -154,6 +154,8 @@ public class WaveletAudioConvolution : MonoBehaviour
                 dotSum += math.abs(waveDot);
             }
 
+            dotSum /= smpPerPix / (float)windowStride; // normalize because amount of windows convolved changes with scale
+
             scaleogram[p] = dotSum;
         }
     }
@@ -162,7 +164,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         float max = 0f;
         for (int i = 0; i < signal.Length; i++)
         {
-            signal[i] = math.log10(1f + signal[i]);
+            // signal[i] = math.log10(1f + signal[i]);
 
             float mag = math.abs(signal[i]);
             if (mag > max) {
