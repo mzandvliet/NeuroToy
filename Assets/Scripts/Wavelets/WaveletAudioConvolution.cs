@@ -5,6 +5,17 @@ using Unity.Collections;
 using Unity.Mathematics;
 using Rng = Unity.Mathematics.Random;
 
+/*
+Todo: 
+
+- Fix high frequency garbage
+
+- Allow runtime config of selected segment, resolution settings, recalculate
+- Blue-noise jitter windows in sub-pixel tests
+- Automatically respect Nyquist conditions
+
+*/
+
 public class WaveletAudioConvolution : MonoBehaviour
 {
     [SerializeField] private AudioClip _clip;
@@ -14,19 +25,18 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     private Texture2D _scaleogramTex;
 
-    const int _numPixPerScale = 128;
-    const int _numScales = 8;
+    const int _numPixPerScale = 4096;
+    const int _numScales = 1024;
 
     private void Awake() {
         int sr = _clip.frequency;
 
-        _audio = new NativeArray<float>(sr, Allocator.Persistent);
+        _audio = new NativeArray<float>(_clip.samples / 10, Allocator.Persistent);
         
         var data = new float[_clip.samples];
         _clip.GetData(data, 0);
-        for (int i = 0; i < _audio.Length; i++)
-        {
-            _audio[i] = data[sr * 6 + i];
+        for (int i = 0; i < _audio.Length; i++) {
+            _audio[i] = data[i + _clip.samples / 4];
         }
 
         _scaleogram = new NativeArray<float>(_numPixPerScale, Allocator.Persistent);
@@ -34,19 +44,38 @@ public class WaveletAudioConvolution : MonoBehaviour
         _scaleogramTex = new Texture2D(_numPixPerScale, _numScales, TextureFormat.RFloat, 0, true);
         var tex = _scaleogramTex.GetPixelData<float>(0);
 
-        for (int scale = 0; scale < _numScales; scale++)
-        {
-            float freq = math.pow(3.2f, scale);
-            Transform(_audio, _scaleogram, freq, sr);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        for (int scale = 0; scale < _numScales; scale++) {
+            float freq = math.pow(1.01f, scale); // power law
+            // float freq = math.lerp(1f, sr * 0.5f, scale / (float)_numScales); // linear
+            Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
+
+            var trsJob = new TransformJob() {
+                // in
+                signal = _audio,
+                freq = freq,
+                sr = sr,
+
+                // out
+                scaleogram = _scaleogram,
+            };
+            trsJob.Schedule(_scaleogram.Length, 8, new JobHandle()).Complete();
 
             for (int x = 0; x < _numPixPerScale; x++) {
                 tex[scale * _numPixPerScale + x] = _scaleogram[x];
             }
         }
 
+        watch.Stop();
+        Debug.LogFormat("Total time: {0} ms", watch.ElapsedMilliseconds);
+
         Normalize(tex);
 
         _scaleogramTex.Apply(false);
+
+        var bytes = _scaleogramTex.EncodeToPNG();
+        System.IO.File.WriteAllBytes(System.IO.Path.Combine(Application.dataPath, string.Format("{0}.png", System.DateTime.Now.ToFileTimeUtc())), bytes);
     }
 
     private void OnDestroy() {
@@ -54,11 +83,23 @@ public class WaveletAudioConvolution : MonoBehaviour
         _scaleogram.Dispose();
     }
 
+    private float _guiX = 0;
+    private float _guiY = 0;
+    private float _guiXScale = 1;
+    private float _guiYScale = 1;
+
     private void OnGUI() {
         GUI.DrawTexture(
-            new Rect(0f, 0f, Screen.width, Screen.height),
+            new Rect(_guiX, _guiY, _scaleogramTex.width * _guiXScale, _scaleogramTex.height * _guiYScale),
             _scaleogramTex
         );
+
+        GUILayout.BeginVertical(GUILayout.Width(1000f)); {
+            _guiX = GUILayout.HorizontalSlider(_guiX, -Screen.width, -Screen.width);
+            _guiY = GUILayout.HorizontalSlider(_guiY, -Screen.height, Screen.height);
+            _guiXScale = GUILayout.HorizontalSlider(_guiXScale, 0.1f, 10f);
+            _guiYScale = GUILayout.HorizontalSlider(_guiYScale, 0.1f, 10f);
+        }; GUILayout.EndVertical();
     }
 
     private void TestWaveSampling() {
@@ -72,31 +113,39 @@ public class WaveletAudioConvolution : MonoBehaviour
         }
     }
 
-    private static void Transform(NativeArray<float> signal, NativeArray<float> scaleogram, float freq, int sr) {
-        // Convolve
+    [BurstCompile]
+    public struct TransformJob : IJobParallelFor {
+        [ReadOnly] public NativeArray<float> signal;
+        [ReadOnly] public float freq;
+        [ReadOnly] public int sr;
 
-        int smpPerPix = signal.Length / _numPixPerScale;
+        [WriteOnly] public NativeArray<float> scaleogram;
         
-        
-        int smpPerPeriod = (int)math.floor(sr / freq) + 1;
-        int smpPerWave = smpPerPeriod * 2;
-        int windowStride = smpPerPeriod * 1;
+        public void Execute(int p) {
+            /*
+            Todo: Calculate exact window size in samples needed to convolve current wavelet
+            */
 
-        for (int p = 0; p < _numPixPerScale; p++)
-        {
+
+            const int n = 3;
+            int smpPerPix = signal.Length / _numPixPerScale;
+            int smpPerPeriod = (int)math.floor(sr / freq) + 1;
+            int smpPerWave = smpPerPeriod * n * 2;
+            int windowStride = smpPerPeriod / 2;
+
             float dotSum = 0f;
 
-            for (int i = p * smpPerPix; i < (p + 1) * smpPerPix && i+smpPerWave < signal.Length; i+= windowStride) {
+            for (int i = p * smpPerPix; i < (p + 1) * smpPerPix && i + smpPerWave < signal.Length; i += windowStride) {
                 float waveDot = 0f;
                 for (int w = 0; w < smpPerWave; w++) {
-                    float waveTime = -1f + (w / (float)smpPerWave) * 2f;
-                    waveDot += Wave(waveTime, freq) * signal[i+w];
+                    float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
+                    waveDot += Wave(waveTime, freq) * signal[i + w];
                 }
 
                 dotSum += math.abs(waveDot);
             }
 
-            scaleogram[p] = math.log10(1f + dotSum);
+            scaleogram[p] = dotSum;
         }
     }
 
@@ -104,6 +153,8 @@ public class WaveletAudioConvolution : MonoBehaviour
         float max = 0f;
         for (int i = 0; i < signal.Length; i++)
         {
+            signal[i] = math.log10(1f + signal[i]);
+
             float mag = math.abs(signal[i]);
             if (mag > max) {
                 max = mag;
@@ -128,7 +179,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     private static float Wave(float time, float freq) {
         const float twopi = math.PI * 2f;
-        const float n = 6;
+        const float n = 6; // todo: affects needed window size
         float s = n / (twopi * freq);
         return math.cos(twopi * time * freq) * math.exp(-(time*time) / (2f * s * s));
     }
