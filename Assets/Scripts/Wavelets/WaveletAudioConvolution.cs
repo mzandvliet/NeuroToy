@@ -19,24 +19,27 @@ Todo:
 public class WaveletAudioConvolution : MonoBehaviour
 {
     [SerializeField] private AudioClip _clip;
+    [SerializeField] private bool _savePng;
 
     private NativeArray<float> _audio;
     private NativeArray<float> _scaleogram;
 
     private Texture2D _scaleogramTex;
 
-    const int _numPixPerScale = 4096;
-    const int _numScales = 1024;
+    const int _numPixPerScale = 4096/2;
+    const int _numScales = 512;
+    // const float _scalePowBase = 1.071f; // for 128
+    const float _scalePowBase = 1.01f; // for 1024
 
     private void Awake() {
         int sr = _clip.frequency;
 
-        _audio = new NativeArray<float>(_clip.samples / 10, Allocator.Persistent);
-        
+        _audio = new NativeArray<float>(sr, Allocator.Persistent); // _clip.samples
+
         var data = new float[_clip.samples];
         _clip.GetData(data, 0);
         for (int i = 0; i < _audio.Length; i++) {
-            _audio[i] = data[i + _clip.samples / 4];
+            _audio[i] = data[sr * 3 + i];
         }
 
         _scaleogram = new NativeArray<float>(_numPixPerScale, Allocator.Persistent);
@@ -47,7 +50,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
         for (int scale = 0; scale < _numScales; scale++) {
-            float freq = math.pow(1.01f, scale); // power law
+            float freq = 20f + Mathf.Pow(1.017f, scale); // power law
             // float freq = math.lerp(1f, sr * 0.5f, scale / (float)_numScales); // linear
             Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
 
@@ -74,8 +77,9 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         _scaleogramTex.Apply(false);
 
-        var bytes = _scaleogramTex.EncodeToPNG();
-        System.IO.File.WriteAllBytes(System.IO.Path.Combine(Application.dataPath, string.Format("{0}.png", System.DateTime.Now.ToFileTimeUtc())), bytes);
+        if (_savePng) {
+            ExportPNG();
+        }
     }
 
     private void OnDestroy() {
@@ -94,12 +98,14 @@ public class WaveletAudioConvolution : MonoBehaviour
             _scaleogramTex
         );
 
-        GUILayout.BeginVertical(GUILayout.Width(1000f)); {
+        GUILayout.BeginVertical(GUILayout.Width(1000f));
+        {
             _guiX = GUILayout.HorizontalSlider(_guiX, -Screen.width, -Screen.width);
             _guiY = GUILayout.HorizontalSlider(_guiY, -Screen.height, Screen.height);
             _guiXScale = GUILayout.HorizontalSlider(_guiXScale, 0.1f, 10f);
             _guiYScale = GUILayout.HorizontalSlider(_guiYScale, 0.1f, 10f);
-        }; GUILayout.EndVertical();
+        };
+        GUILayout.EndVertical();
     }
 
     private void TestWaveSampling() {
@@ -126,20 +132,23 @@ public class WaveletAudioConvolution : MonoBehaviour
             Todo: Calculate exact window size in samples needed to convolve current wavelet
             */
 
+            Rng rng = new Rng((uint)(p * 123 + freq * 137));
 
             const int n = 3;
             int smpPerPix = signal.Length / _numPixPerScale;
             int smpPerPeriod = (int)math.floor(sr / freq) + 1;
             int smpPerWave = smpPerPeriod * n * 2;
-            int windowStride = smpPerPeriod / 2;
+            int windowStride = smpPerPeriod * 2;
 
             float dotSum = 0f;
 
-            for (int i = p * smpPerPix; i < (p + 1) * smpPerPix && i + smpPerWave < signal.Length; i += windowStride) {
+            for (int i = 0; i < smpPerPix; i+=windowStride) {
+                var windowJitter = 0;//rng.NextInt(smpPerPeriod >> 2);
+
                 float waveDot = 0f;
-                for (int w = 0; w < smpPerWave; w++) {
+                for (int w = 0; w < smpPerWave && p * smpPerPix + (i+1) * smpPerWave + windowJitter < signal.Length; w++) {
                     float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
-                    waveDot += Wave(waveTime, freq) * signal[i + w];
+                    waveDot += Wave(waveTime, freq) * signal[p * smpPerPix + i * smpPerWave + windowJitter + w];
                 }
 
                 dotSum += math.abs(waveDot);
@@ -182,5 +191,12 @@ public class WaveletAudioConvolution : MonoBehaviour
         const float n = 6; // todo: affects needed window size
         float s = n / (twopi * freq);
         return math.cos(twopi * time * freq) * math.exp(-(time*time) / (2f * s * s));
+    }
+
+    private void ExportPNG() {
+        var pngPath = System.IO.Path.Combine(Application.dataPath, string.Format("{0}.png", System.DateTime.Now.ToFileTimeUtc()));
+        var pngBytes = _scaleogramTex.EncodeToPNG();
+        System.IO.File.WriteAllBytes(pngPath, pngBytes);
+        Debug.LogFormat("Wrote image: {0}", pngPath);
     }
 }
