@@ -40,8 +40,8 @@ public class WaveletAudioConvolution : MonoBehaviour
             numScales = 1024,
             scalePowBase = 1.009f, // for 1024
 
-            waveTimeJitter = 0.05f,
-            waveFreqJitter = 0.01f,
+            waveTimeJitter = 0.001f,
+            waveFreqJitter = 0.001f,
             convsPerPixMultiplier = 1,
         };
 
@@ -89,13 +89,13 @@ public class WaveletAudioConvolution : MonoBehaviour
             _config.numPixPerScale = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.numPixPerScale), 4, 12)));
             _config.numScales = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.numScales), 4, 12)));
 
-            GUILayout.Label(string.Format("Convs Per Pixel Multiplier: {0:0}", _config.convsPerPixMultiplier));
+            GUILayout.Label(string.Format("Convs Per Pixel Multiplier: {0:0.00}", _config.convsPerPixMultiplier));
             _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0f, 4f);
 
             GUILayout.Label(string.Format("Wave Time Jitter: {0:0.000}", _config.waveTimeJitter));
-            _config.waveTimeJitter = GUILayout.HorizontalSlider(_config.waveTimeJitter, 0f, 0.2f);
+            _config.waveTimeJitter = GUILayout.HorizontalSlider(_config.waveTimeJitter, 0f, 0.1f);
             GUILayout.Label(string.Format("Wave Freq Jitter: {0:0.000}", _config.waveFreqJitter));
-            _config.waveFreqJitter = GUILayout.HorizontalSlider(_config.waveFreqJitter, 0f, 0.2f);
+            _config.waveFreqJitter = GUILayout.HorizontalSlider(_config.waveFreqJitter, 0f, 1f);
             
 
             if (GUILayout.Button("Transform")) {
@@ -119,8 +119,8 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         for (int scale = 0; scale < _config.numScales; scale++) {
             float freq = 20f + Mathf.Pow(_config.scalePowBase, scale); // power law
-            // float freq = math.lerp(1f, sr * 0.5f, scale / (float)_numScales); // linear
-            Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
+            // float freq = math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); // linear
+            // Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
 
             var trsJob = new TransformJob()
             {
@@ -147,7 +147,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         var normJob = new NormalizeJob()
         {
-            signal = tex,
+            tex = tex,
         };
         handle = normJob.Schedule(handle);
 
@@ -202,32 +202,34 @@ public class WaveletAudioConvolution : MonoBehaviour
         
         public void Execute(int p) {
             /*
-            Todo: Calculate exact window size in samples needed to convolve current wavelet
+            Todo:
+            - Calculate exact window size in samples needed to convolve current wavelet
+            - Apply appropriate energy scaling
             */
 
             Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*128f) * 0xE0EB6C25u);
 
-            const int n = 3;
+            const int n = 4;
             int smpPerPix = signal.Length / cfg.numPixPerScale;
             int smpPerPeriod = (int)math.floor(sr / freq) + 1;
             int smpPerWave = smpPerPeriod * n * 2;
             int convsPerPix = 1 + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
-            float waveJitterMag = cfg.waveTimeJitter / freq;
-            float freqJitterMag = cfg.waveFreqJitter * p;
+            int waveJitterMag = (int)(smpPerPeriod * cfg.waveTimeJitter);
+            float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
 
             float dotSum = 0f;
 
             int linStep = smpPerPix / convsPerPix;
 
             for (int c = 0; c < convsPerPix; c++) {
-                var smpStart = p * smpPerPix + linStep;
-                var waveJitter = rng.NextFloat(-waveJitterMag, waveJitterMag);
+                var smpStart = p * smpPerPix + linStep * c;
+                var waveJitter = rng.NextInt(0, waveJitterMag);
                 var freqJitter = rng.NextFloat(-freqJitterMag, freqJitterMag);
 
                 float waveDot = 0f;
-                for (int w = 0; w < smpPerWave && smpStart + w < signal.Length; w++) {
+                for (int w = 0; w < smpPerWave && smpStart + w + waveJitter < signal.Length; w++) {
                     float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
-                    waveDot += Wave(waveTime + waveJitter, freq + freqJitter) * signal[smpStart + w];
+                    waveDot += Wave(waveTime, freq + freqJitter) * signal[smpStart + w + waveJitter];
                 }
 
                 dotSum += math.abs(waveDot);
@@ -254,22 +256,22 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     [BurstCompile]
     public struct NormalizeJob : IJob {
-        public NativeArray<float4> signal;
+        public NativeArray<float4> tex;
 
         public void Execute() {
             float max = 0f;
-            for (int i = 0; i < signal.Length; i++) {
-                signal[i] = new float4(math.log10(1f + signal[i].x), 0f, 0f, 0f);
+            for (int i = 0; i < tex.Length; i++) {
+                tex[i] = new float4(math.log10(1f + tex[i].x), 0f, 0f, 0f);
 
-                float mag = math.abs(signal[i].x);
+                float mag = math.abs(tex[i].x);
                 if (mag > max) {
                     max = mag;
                 }
             }
 
             float maxInv = 1f / max;
-            for (int i = 0; i < signal.Length; i++) {
-                signal[i] *= maxInv;
+            for (int i = 0; i < tex.Length; i++) {
+                tex[i] *= maxInv;
             }
         }
     }
@@ -286,17 +288,17 @@ public class WaveletAudioConvolution : MonoBehaviour
             //     1f);
 
             // Spread across RGB
-            // tex[i] = new float4(
-            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 1f)),
-            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 2f)),
-            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 3f)),
-            //     1f);
-
             tex[i] = new float4(
-               math.clamp(tex[i].x * 4f - 1f, 0f, 1f),
-               math.clamp(tex[i].x * 4f - 2f, 0f, 1f),
-               math.clamp(tex[i].x * 4f - 3f, 0f, 1f),
-               1f);
+                math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 1f)),
+                math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 2f)),
+                math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 3f)),
+                1f);
+
+            // tex[i] = new float4(
+            //    math.clamp(tex[i].x * 3f - 0f, 0f, 1f),
+            //    math.clamp(tex[i].x * 3f - 1f, 0f, 1f),
+            //    math.clamp(tex[i].x * 3f - 2f, 0f, 1f),
+            //    1f);
         }
     }
 
@@ -312,7 +314,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     private static float Wave(float time, float freq) {
         const float twopi = math.PI * 2f;
-        const float n = 6; // todo: affects needed window size
+        const float n = 8; // todo: affects needed window size
         float s = n / (twopi * freq);
         return math.cos(twopi * time * freq) * math.exp(-(time*time) / (2f * s * s));
     }
