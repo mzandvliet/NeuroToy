@@ -311,17 +311,19 @@ public class WaveletAudioConvolution : MonoBehaviour
             //     1f);
 
             // Spread across RGB
-            tex[i] = new float4(
-                math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 1f)),
-                math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 2f)),
-                math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 3f)),
-                1f);
-
             // tex[i] = new float4(
-            //    math.clamp(tex[i].x * 3f - 0f, 0f, 1f),
-            //    math.clamp(tex[i].x * 3f - 1f, 0f, 1f),
-            //    math.clamp(tex[i].x * 3f - 2f, 0f, 1f),
-            //    1f);
+            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 3f)),
+            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 2f)),
+            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 1f)),
+            //     1f);
+
+            tex[i] = new float4(
+               math.clamp(tex[i].x * 3f - 2f, 0f, 1f),
+               math.clamp(tex[i].x * 3f - 1f, 0f, 1f),
+               math.clamp(tex[i].x * 3f - 0f, 0f, 1f),
+               1f);
+
+            // tex[i] = (Vector4)Color.HSVToRGB(tex[i].x, 1f, tex[i].x);
         }
     }
 
