@@ -9,8 +9,8 @@ using Rng = Unity.Mathematics.Random;
 Todo: 
 
 - Fix high frequency garbage
+- fix sigmoidal frequency-dependent time shift seen in visuals
 
-- Allow runtime config of selected segment, resolution settings, recalculate
 - Automatically respect Nyquist conditions
 
 
@@ -32,6 +32,8 @@ public class WaveletAudioConvolution : MonoBehaviour
     private Texture2D _scaleogramTex;
 
     private TransformConfig _config;
+    private float _signalStart;
+    private float _signalEnd;
 
     private void Awake() {
         _config = new TransformConfig()
@@ -48,13 +50,16 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         int sr = _clip.frequency;
 
-        _audio = new NativeArray<float>(sr, Allocator.Persistent); // _clip.samples
+        _audio = new NativeArray<float>(_clip.samples, Allocator.Persistent); // _clip.samples
 
         var data = new float[_clip.samples];
         _clip.GetData(data, 0);
         for (int i = 0; i < _audio.Length; i++) {
-            _audio[i] = data[sr * 3 + i];
+            _audio[i] = data[i];
         }
+
+        _signalStart = 0f;
+        _signalEnd = _clip.length;
 
         _scaleogram = new NativeArray<float>(_config.numPixPerScale, Allocator.Persistent);
         _scaleogramTex = new Texture2D(_config.numPixPerScale, _config.numScales, TextureFormat.RGBAFloat, 4, true);
@@ -80,10 +85,20 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(1000f));
         {
+            GUILayout.Label("Position XY, Scale XY");
             _guiX = GUILayout.HorizontalSlider(_guiX, -Screen.width, Screen.width);
             _guiY = GUILayout.HorizontalSlider(_guiY, -Screen.height, Screen.height);
             _guiXScale = GUILayout.HorizontalSlider(_guiXScale, 0.1f, 10f);
             _guiYScale = GUILayout.HorizontalSlider(_guiYScale, 0.1f, 10f);
+
+            GUILayout.Space(16f);
+
+            GUILayout.Label(string.Format("Signal Start: {0:0.00} seconds", _signalStart));
+            _signalStart = Mathf.Clamp(GUILayout.HorizontalSlider(_signalStart, 0f, _clip.length), 0f, _signalEnd-0.1f);
+            GUILayout.Label(string.Format("Signal End: {0:0.00} seconds", _signalEnd));
+            _signalEnd = Mathf.Clamp(GUILayout.HorizontalSlider(_signalEnd, 0f, _clip.length), _signalStart+0.1f, _clip.length);
+
+            GUILayout.Space(16f);
 
             GUILayout.Label(string.Format("Resolution: {0} x {1}", _config.numPixPerScale, _config.numScales));
             _config.numPixPerScale = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.numPixPerScale), 4, 12)));
@@ -114,6 +129,13 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         int sr = _clip.frequency;
         var tex = _scaleogramTex.GetPixelData<float4>(0);
+
+        var signalSlice = _audio.Slice(
+            (int)(_clip.frequency * _signalStart),
+            (int)(_clip.frequency * (_signalEnd-_signalStart)));
+
+        Debug.Log(_clip.frequency * _signalStart + ", " + _clip.frequency * _signalEnd);
+
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var handle = new JobHandle();
 
@@ -125,7 +147,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             var trsJob = new TransformJob()
             {
                 // in
-                signal = _audio,
+                signal = signalSlice,
                 freq = freq,
                 sr = sr,
                 cfg = _config,
@@ -193,50 +215,51 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     [BurstCompile]
     public struct TransformJob : IJobParallelFor {
-        [ReadOnly] public NativeArray<float> signal;
+        [ReadOnly] public NativeSlice<float> signal;
         [ReadOnly] public float freq;
         [ReadOnly] public int sr;
         [ReadOnly] public TransformConfig cfg;
 
-        [WriteOnly] public NativeArray<float> scaleogram;
+        [WriteOnly] public NativeSlice<float> scaleogram;
         
         public void Execute(int p) {
             /*
             Todo:
-            - Calculate exact window size in samples needed to convolve current wavelet
-            - Apply appropriate energy scaling
+            - Let's fix this mess! Here's how:
+
+            Center a wave kernel at the pixel position
+            Consider that a 1hz wavelet with 6-period support will likely extend very far outside
+            the range of samples 'covered' by a screen pixel.
+            This does *not* mean that we chop the convolution to only within the space of the pixel,
+            no, we still have to perform the whole convolution in so far as we have signal to work with
             */
 
             Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*128f) * 0xE0EB6C25u);
 
-            const int n = 4;
+            const int n = 3;
             int smpPerPix = signal.Length / cfg.numPixPerScale;
             int smpPerPeriod = (int)math.floor(sr / freq) + 1;
             int smpPerWave = smpPerPeriod * n * 2;
-            int convsPerPix = 1 + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
             int waveJitterMag = (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
 
             float dotSum = 0f;
 
-            int linStep = smpPerPix / convsPerPix;
+            var smpStart = p * smpPerPix - smpPerWave / 2;
+            var waveJitter = 0;//rng.NextInt(0, waveJitterMag);
+            var freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
 
-            for (int c = 0; c < convsPerPix; c++) {
-                var smpStart = p * smpPerPix + linStep * c;
-                var waveJitter = rng.NextInt(0, waveJitterMag);
-                var freqJitter = rng.NextFloat(-freqJitterMag, freqJitterMag);
-
-                float waveDot = 0f;
-                for (int w = 0; w < smpPerWave && smpStart + w + waveJitter < signal.Length; w++) {
-                    float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
-                    waveDot += Wave(waveTime, freq + freqJitter) * signal[smpStart + w + waveJitter];
+            float waveDot = 0f;
+            for (int w = 0; w < smpPerWave; w++) {
+                float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
+                int signalIdx = smpStart + w + waveJitter;
+                if (signalIdx < 0 || signalIdx >= signal.Length) {
+                    continue;
                 }
-
-                dotSum += math.abs(waveDot);
+                waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx];
             }
 
-            // normalize because amount of windows convolved changes with scale
-            dotSum /= (float)convsPerPix;
+            dotSum += math.abs(waveDot);
 
             scaleogram[p] = dotSum;
         }
@@ -314,7 +337,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     private static float Wave(float time, float freq) {
         const float twopi = math.PI * 2f;
-        const float n = 8; // todo: affects needed window size
+        const float n = 6; // todo: affects needed window size
         float s = n / (twopi * freq);
         return math.cos(twopi * time * freq) * math.exp(-(time*time) / (2f * s * s));
     }
