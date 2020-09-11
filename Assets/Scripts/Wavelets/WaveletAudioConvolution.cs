@@ -13,11 +13,17 @@ Todo:
 
 - Automatically respect Nyquist conditions
 
+Ideas:
 
 - Monte carlo integration
     - Blue-noise jitter windows in sub-pixel tests
     - jitter in time, but also in scale/freq
 
+- Quadtree datastructure for tracking measurements
+
+It's funny, but in thinking of stochastically, adaptively sampling
+the full continuous transform, the image we are building up can
+itself be thought of as a wavelet-like structure
 
 */
 
@@ -240,26 +246,35 @@ public class WaveletAudioConvolution : MonoBehaviour
             int smpPerPix = signal.Length / cfg.numPixPerScale;
             int smpPerPeriod = (int)math.floor(sr / freq) + 1;
             int smpPerWave = smpPerPeriod * n * 2;
+
+            int convsPerPix = 1 + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
+
             int waveJitterMag = (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
 
+            int convStep = smpPerPix / convsPerPix;
+
             float dotSum = 0f;
 
-            var smpStart = p * smpPerPix - smpPerWave / 2;
-            var waveJitter = 0;//rng.NextInt(0, waveJitterMag);
-            var freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
+            for (int c = 0; c < convsPerPix; c++) {
+                var smpStart = p * smpPerPix + c * convStep - smpPerWave / 2;
+                var waveJitter = rng.NextInt(0, waveJitterMag);
+                var freqJitter = rng.NextFloat(-freqJitterMag, freqJitterMag);
 
-            float waveDot = 0f;
-            for (int w = 0; w < smpPerWave; w++) {
-                float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
-                int signalIdx = smpStart + w + waveJitter;
-                if (signalIdx < 0 || signalIdx >= signal.Length) {
-                    continue;
+                float waveDot = 0f;
+                for (int w = 0; w < smpPerWave; w++) {
+                    float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
+                    int signalIdx = smpStart + w + waveJitter;
+
+                    if (signalIdx < 0 || signalIdx >= signal.Length) {
+                        continue;
+                    }
+
+                    waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx];
                 }
-                waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx];
-            }
 
-            dotSum += math.abs(waveDot);
+                dotSum += math.abs(waveDot);
+            }
 
             scaleogram[p] = dotSum;
         }
@@ -317,13 +332,13 @@ public class WaveletAudioConvolution : MonoBehaviour
             //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 1f)),
             //     1f);
 
-            tex[i] = new float4(
-               math.clamp(tex[i].x * 3f - 2f, 0f, 1f),
-               math.clamp(tex[i].x * 3f - 1f, 0f, 1f),
-               math.clamp(tex[i].x * 3f - 0f, 0f, 1f),
-               1f);
+            // tex[i] = new float4(
+            //    math.clamp(tex[i].x * 3f - 2f, 0f, 1f),
+            //    math.clamp(tex[i].x * 3f - 1f, 0f, 1f),
+            //    math.clamp(tex[i].x * 3f - 0f, 0f, 1f),
+            //    1f);
 
-            // tex[i] = (Vector4)Color.HSVToRGB(tex[i].x, 1f, tex[i].x);
+            tex[i] = (Vector4)Color.HSVToRGB(tex[i].x, 1f, tex[i].x);
         }
     }
 
