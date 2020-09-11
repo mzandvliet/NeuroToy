@@ -8,8 +8,9 @@ using Rng = Unity.Mathematics.Random;
 /*
 Todo: 
 
+- Add GUI control for changing scale layout
 - Fix high frequency garbage
-- fix sigmoidal frequency-dependent time shift seen in visuals
+- Do rendering part on gpu, for live tweaking of scan results (contrast, etc)
 
 - Automatically respect Nyquist conditions
 
@@ -48,9 +49,9 @@ public class WaveletAudioConvolution : MonoBehaviour
             numScales = 1024,
             scalePowBase = 1.009f, // for 1024
 
-            waveTimeJitter = 0.001f,
-            waveFreqJitter = 0.001f,
-            convsPerPixMultiplier = 1,
+            waveTimeJitter = 0.0003f,
+            waveFreqJitter = 0.0003f,
+            convsPerPixMultiplier = 0.25f,
         };
 
 
@@ -113,10 +114,10 @@ public class WaveletAudioConvolution : MonoBehaviour
             GUILayout.Label(string.Format("Convs Per Pixel Multiplier: {0:0.00}", _config.convsPerPixMultiplier));
             _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0f, 4f);
 
-            GUILayout.Label(string.Format("Wave Time Jitter: {0:0.000}", _config.waveTimeJitter));
-            _config.waveTimeJitter = GUILayout.HorizontalSlider(_config.waveTimeJitter, 0f, 0.1f);
-            GUILayout.Label(string.Format("Wave Freq Jitter: {0:0.000}", _config.waveFreqJitter));
-            _config.waveFreqJitter = GUILayout.HorizontalSlider(_config.waveFreqJitter, 0f, 1f);
+            GUILayout.Label(string.Format("Wave Time Jitter: {0:0.000000}", _config.waveTimeJitter));
+            _config.waveTimeJitter = GUILayout.HorizontalSlider(_config.waveTimeJitter, 0f, 0.01f);
+            GUILayout.Label(string.Format("Wave Freq Jitter: {0:0.000000}", _config.waveFreqJitter));
+            _config.waveFreqJitter = GUILayout.HorizontalSlider(_config.waveFreqJitter, 0f, 0.01f);
             
 
             if (GUILayout.Button("Transform")) {
@@ -146,7 +147,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         var handle = new JobHandle();
 
         for (int scale = 0; scale < _config.numScales; scale++) {
-            float freq = 20f + Mathf.Pow(_config.scalePowBase, scale); // power law
+            float freq = 16f + Mathf.Pow(_config.scalePowBase, scale); // power law
             // float freq = math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); // linear
             // Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
 
@@ -338,7 +339,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             //    math.clamp(tex[i].x * 3f - 0f, 0f, 1f),
             //    1f);
 
-            tex[i] = (Vector4)Color.HSVToRGB(tex[i].x, 1f, tex[i].x);
+            tex[i] = (Vector4)Color.HSVToRGB(tex[i].x, 1f, math.pow(tex[i].x, 0.5f));
         }
     }
 
