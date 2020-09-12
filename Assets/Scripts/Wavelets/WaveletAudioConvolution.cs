@@ -262,26 +262,36 @@ public class WaveletAudioConvolution : MonoBehaviour
             Todo:
             - High frequency issues:
 
+            We see increasing correlation between successively higher scales, until
+            we just get very wide bands of essentially the same convolution result,
+            despite varying wave frequency per discrete scale.
+
+            Effectively we see numerical loss of orthogonality between the wavelets
+            at those higher scales! That's a fun observation.
+
+            Known properties:
+            - discontinuities are linearly coupled to scale/frequency, move with them
+
             ruled out:
-            freq or timeSpan being constant over a range of scales
+            - freq or timeSpan being constant over a range of scales
+
+            Likely:
+            - sample window n being constant over a range of scales
 
             options:
-            - window of n samples not being jittered, too highly correlated between scales?
+            - using spacing in samples to compute quantities leads to these bands measuring the same thing
             - normalization issue dependent on window sample count
-
-            This brings us to normalization, in fact.
-            How? W.r.t to what?
 
             */
 
-            Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*128f) * 0xE0EB6C25u);
+            Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*0xCD0445A5u) * 0xE0EB6C25u);
 
-            const int nHalf = 3;
+            const int nHalf = 3; // todo: from config
             int smpPerPix = signal.Length / cfg.numPixPerScale;
             int smpPerPeriod = (int)math.ceil(sr / freq);
             int smpPerWave = smpPerPeriod * nHalf * 2;
 
-            int convsPerPix = 1 + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
+            int convsPerPix = 1;// + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
 
             int waveJitterMag = 1 + (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
@@ -294,8 +304,8 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             for (int c = 0; c < convsPerPix; c++) {
                 var smpStart = p * smpPerPix + c * convStep - smpPerWave / 2;
-                var waveJitter = rng.NextInt(-waveJitterMag, waveJitterMag+1);
-                var freqJitter = rng.NextFloat(-freqJitterMag, freqJitterMag);
+                var waveJitter = 0;//rng.NextInt(-waveJitterMag, waveJitterMag+1);
+                var freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
 
                 float waveDot = 0f;
                 for (int w = 0; w < smpPerWave; w++) {
@@ -306,13 +316,13 @@ public class WaveletAudioConvolution : MonoBehaviour
                         continue;
                     }
 
-                    waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx];
+                    waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx] / (float)smpPerWave;
                 }
 
                 dotSum += math.abs(waveDot);
             }
 
-            scaleogram[p] = dotSum;
+            scaleogram[p] = dotSum / (float)convsPerPix;
         }
     }
 
