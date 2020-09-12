@@ -8,8 +8,7 @@ using Rng = Unity.Mathematics.Random;
 /*
 Todo: 
 
-- Add GUI control for changing scale layout
-- Fix high frequency garbage
+- Fix high frequency precision issues
 - Do rendering part on gpu, for live tweaking of scan results (contrast, etc)
 
 - Automatically respect Nyquist conditions
@@ -131,7 +130,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             GUILayout.Label(string.Format("Highest Scale {0:0.00} Hz", _config.highestScale));
             _config.highestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.highestScale, _config.lowestScale, _clip.frequency/2f), _config.lowestScale + 1f, _clip.frequency / 2f);
             GUILayout.Label(string.Format("Scale Power Base {0:0.00}", _config.scalePowBase));
-            _config.scalePowBase = GUILayout.HorizontalSlider(_config.scalePowBase, 0.95f, 2f);
+            _config.scalePowBase = GUILayout.HorizontalSlider(_config.scalePowBase, 0.95f, 1.25f);
 
             GUILayout.Space(16f);
 
@@ -145,7 +144,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             GUILayout.Label(string.Format("Wave Time Jitter: {0:0.000000}", _config.waveTimeJitter));
             _config.waveTimeJitter = GUILayout.HorizontalSlider(_config.waveTimeJitter, 0f, 0.01f);
             GUILayout.Label(string.Format("Wave Freq Jitter: {0:0.000000}", _config.waveFreqJitter));
-            _config.waveFreqJitter = GUILayout.HorizontalSlider(_config.waveFreqJitter, 0f, 0.01f);
+            _config.waveFreqJitter = GUILayout.HorizontalSlider(_config.waveFreqJitter, 0f, 0.1f);
             
 
             if (GUILayout.Button("Transform")) {
@@ -261,16 +260,19 @@ public class WaveletAudioConvolution : MonoBehaviour
         public void Execute(int p) {
             /*
             Todo:
-            - Let's fix this mess! Here's how:
+            - High frequency issues:
 
-            Center a wave kernel at the pixel position
-            Consider that a 1hz wavelet with 6-period support will likely extend very far outside
-            the range of samples 'covered' by a screen pixel.
-            This does *not* mean that we chop the convolution to only within the space of the pixel,
-            no, we still have to perform the whole convolution in so far as we have signal to work with
+            ruled out:
+            freq or timeSpan being constant over a range of scales
+
+            options:
+            - window of n samples not being jittered, too highly correlated between scales?
+            - normalization issue dependent on window sample count
+
+            This brings us to normalization, in fact.
+            How? W.r.t to what?
+
             */
-
-            // freq = 200;
 
             Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*128f) * 0xE0EB6C25u);
 
@@ -281,7 +283,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             int convsPerPix = 1 + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
 
-            int waveJitterMag = (int)(smpPerPeriod * cfg.waveTimeJitter);
+            int waveJitterMag = 1 + (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
 
             int convStep = smpPerPix / convsPerPix;
@@ -292,7 +294,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             for (int c = 0; c < convsPerPix; c++) {
                 var smpStart = p * smpPerPix + c * convStep - smpPerWave / 2;
-                var waveJitter = rng.NextInt(0, waveJitterMag);
+                var waveJitter = rng.NextInt(-waveJitterMag, waveJitterMag+1);
                 var freqJitter = rng.NextFloat(-freqJitterMag, freqJitterMag);
 
                 float waveDot = 0f;
