@@ -56,6 +56,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             waveFreqJitter = 0.0003f,
             convsPerPixMultiplier = 0.25f,
         };
+        _config.UpdateDerivedProperties();
 
         _audio = new NativeArray<float>(_clip.samples, Allocator.Persistent); // _clip.samples
 
@@ -130,7 +131,9 @@ public class WaveletAudioConvolution : MonoBehaviour
             GUILayout.Label(string.Format("Highest Scale {0:0.00} Hz", _config.highestScale));
             _config.highestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.highestScale, _config.lowestScale, _clip.frequency/2f), _config.lowestScale + 1f, _clip.frequency / 2f);
             GUILayout.Label(string.Format("Scale Power Base {0:0.00}", _config.scalePowBase));
-            _config.scalePowBase = GUILayout.HorizontalSlider(_config.scalePowBase, 0.95f, 1.25f);
+            _config.scalePowBase = GUILayout.HorizontalSlider(_config.scalePowBase, 1.000001f, 1.25f);
+
+            _config.UpdateDerivedProperties();
 
             GUILayout.Space(16f);
 
@@ -246,6 +249,15 @@ public class WaveletAudioConvolution : MonoBehaviour
         public float lowestScale;
         public float highestScale;
         public float scalePowBase;
+
+        public float _scaleNormalizationFactor;
+
+        public void UpdateDerivedProperties() {
+            /*
+            Todo: this is cute, but note the divide-by-zero when scalePowBase == 1.0
+            */
+            _scaleNormalizationFactor = (1f / (Mathf.Pow(scalePowBase, numScales) - 1f)) * (highestScale - lowestScale);
+        }
 }
 
     [BurstCompile]
@@ -432,8 +444,11 @@ public class WaveletAudioConvolution : MonoBehaviour
     }
 
     private static float Scale2Freq(float scale, TransformConfig cfg) {
-        // return math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); // linear'
-        return cfg.lowestScale + Mathf.Pow(cfg.scalePowBase, scale); // power law
+        // linear
+        // return math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); 
+
+        // power law
+        return cfg.lowestScale + (Mathf.Pow(cfg.scalePowBase, scale) - 1f) * cfg._scaleNormalizationFactor;
     }
 
     private void ExportPNG() {
