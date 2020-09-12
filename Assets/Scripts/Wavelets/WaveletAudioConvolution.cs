@@ -90,6 +90,24 @@ public class WaveletAudioConvolution : MonoBehaviour
             _scaleogramTex
         );
 
+        GUILayout.BeginVertical();
+        {
+            const int labelHeight = 32;
+            float scaledHeight = _scaleogramTex.height * _guiYScale;
+            int numScaleLabels = Mathf.RoundToInt(scaledHeight / labelHeight);
+            float scaleStep = (float)_config.numScales / (numScaleLabels-1);
+            float heightStep = scaledHeight / (numScaleLabels-1);
+            for (int i = 0; i < numScaleLabels; i++) {
+                GUI.Label(new Rect(
+                    _guiX,
+                    _guiY + scaledHeight - heightStep * i - labelHeight * 0.5f,
+                    100f,
+                    labelHeight),
+                    string.Format("{0}Hz", Scale2Freq(i * scaleStep, _config)));
+            }
+        }
+        GUILayout.EndVertical();
+
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(1000f));
         {
             GUILayout.Label("Position XY, Scale XY");
@@ -141,15 +159,15 @@ public class WaveletAudioConvolution : MonoBehaviour
             (int)(_clip.frequency * _signalStart),
             (int)(_clip.frequency * (_signalEnd-_signalStart)));
 
-        Debug.Log(_clip.frequency * _signalStart + ", " + _clip.frequency * _signalEnd);
-
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var handle = new JobHandle();
 
         for (int scale = 0; scale < _config.numScales; scale++) {
-            float freq = 16f + Mathf.Pow(_config.scalePowBase, scale); // power law
-            // float freq = math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); // linear
+            float freq = Scale2Freq(scale, _config);
             // Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
+
+            int smpPerPeriod = (int)math.ceil(sr / freq);
+            Debug.LogFormat("Scale {0}, freq {1}, smpPerPeriod {2}", scale, freq, smpPerPeriod);
 
             var trsJob = new TransformJob()
             {
@@ -245,7 +263,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             const int n = 3;
             int smpPerPix = signal.Length / cfg.numPixPerScale;
-            int smpPerPeriod = (int)math.floor(sr / freq) + 1;
+            int smpPerPeriod = (int)math.ceil(sr / freq);
             int smpPerWave = smpPerPeriod * n * 2;
 
             int convsPerPix = 1 + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
@@ -264,7 +282,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
                 float waveDot = 0f;
                 for (int w = 0; w < smpPerWave; w++) {
-                    float waveTime = -n + (w / (float)smpPerWave) * (2f * n);
+                    float waveTime = -1f + (w / (float)(smpPerWave-1)) * 2f;
                     int signalIdx = smpStart + w + waveJitter;
 
                     if (signalIdx < 0 || signalIdx >= signal.Length) {
@@ -358,6 +376,11 @@ public class WaveletAudioConvolution : MonoBehaviour
         const float n = 6; // todo: affects needed window size
         float s = n / (twopi * freq);
         return math.cos(twopi * time * freq) * math.exp(-(time*time) / (2f * s * s));
+    }
+
+    private static float Scale2Freq(float scale, TransformConfig cfg) {
+        // return math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); // linear'
+        return 16f + Mathf.Pow(cfg.scalePowBase, scale); // power law
     }
 
     private void ExportPNG() {
