@@ -282,41 +282,46 @@ public class WaveletAudioConvolution : MonoBehaviour
             - using spacing in samples to compute quantities leads to these bands measuring the same thing
             - normalization issue dependent on window sample count
 
+            try:
+            - smpStart calculated from center sample in pixel, then offset by a single big float jump
+            - changing float time parameter passed into wave kernel
+            - interpolated sampling of signal using reconstruction kernel, reading in-between samples
+
             */
 
             Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*0xCD0445A5u) * 0xE0EB6C25u);
 
             const int nHalf = 3; // todo: from config
-            int smpPerPix = signal.Length / cfg.numPixPerScale;
-            int smpPerPeriod = (int)math.ceil(sr / freq);
-            int smpPerWave = smpPerPeriod * nHalf * 2;
+            float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
+            float smpPerPeriod = sr / freq;
+            float smpPerWave = smpPerPeriod * nHalf * 2;
 
             int convsPerPix = 1;// + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
 
             int waveJitterMag = 1 + (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
 
-            int convStep = smpPerPix / convsPerPix;
+            float convStep = smpPerPix / (float)convsPerPix;
 
             float timeSpan = 1f / freq * nHalf;
 
             float dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
-                var smpStart = p * smpPerPix + c * convStep - smpPerWave / 2;
+                var smpStart = p * smpPerPix + (0.5f * smpPerPix) - smpPerWave / 2f;
                 var waveJitter = 0;//rng.NextInt(-waveJitterMag, waveJitterMag+1);
                 var freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
 
                 float waveDot = 0f;
-                for (int w = 0; w < smpPerWave; w++) {
-                    float waveTime = -timeSpan + (w / (float)(smpPerWave-1)) * (timeSpan * 2f);
-                    int signalIdx = smpStart + w + waveJitter;
+                for (int w = 0; w <= smpPerWave; w++) {
+                    float waveTime = -timeSpan + (w / smpPerWave) * (timeSpan * 2f);
+                    int signalIdx = (int)(smpStart + w + waveJitter);
 
                     if (signalIdx < 0 || signalIdx >= signal.Length) {
                         continue;
                     }
 
-                    waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx] / (float)smpPerWave;
+                    waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx];
                 }
 
                 dotSum += math.abs(waveDot);
