@@ -139,7 +139,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             _config.numScales = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.numScales), 4, 12)));
 
             GUILayout.Label(string.Format("Convs Per Pixel Multiplier: {0:0.00}", _config.convsPerPixMultiplier));
-            _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0f, 4f);
+            _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0f, 64f);
 
             GUILayout.Label(string.Format("Wave Time Jitter: {0:0.000000}", _config.waveTimeJitter));
             _config.waveTimeJitter = GUILayout.HorizontalSlider(_config.waveTimeJitter, 0f, 0.01f);
@@ -232,7 +232,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         int smpPerWave = smpPerPeriod * 2;
         for (int w = 0; w < smpPerWave; w++) {
             float waveTime = -1f + (w / (float)smpPerWave) * 2f;
-            Debug.LogFormat("t: {0} -> {1}", waveTime, Wave(waveTime, freq));
+            Debug.LogFormat("t: {0} -> {1}", waveTime, WaveReal(waveTime, freq));
         }
     }
 
@@ -296,7 +296,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float smpPerPeriod = sr / freq;
             float smpPerWave = smpPerPeriod * nHalf * 2;
 
-            int convsPerPix = (int)math.ceil((smpPerPix / smpPerWave));// * cfg.convsPerPixMultiplier);
+            int convsPerPix = (int)math.ceil((smpPerPix / smpPerWave * cfg.convsPerPixMultiplier));
 
             int waveJitterMag = 1 + (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
@@ -309,7 +309,8 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             for (int c = 0; c < convsPerPix; c++) {
                 // float smpStart = p * smpPerPix + c * convStep;
-                float smpStart = p * smpPerPix + rng.NextFloat(0f, smpPerPix-smpPerWave); // + (0.5f * smpPerPix) - smpPerWave * 0.5f + rng.NextFloat(-0.5f * smpPerPix, 0.5f * smpPerPix)
+                float halfRange = (smpPerPix) * 0.5f;
+                float smpStart = p * smpPerPix + 0.5f * smpPerPix - 0.5f * smpPerWave + rng.NextFloat(-halfRange, halfRange) * rng.NextFloat(0f, .5f);
                 int waveJitter = 0;//rng.NextInt(-waveJitterMag, waveJitterMag+1);
                 float freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
 
@@ -322,7 +323,10 @@ public class WaveletAudioConvolution : MonoBehaviour
                         continue;
                     }
 
-                    waveDot += Wave(waveTime, freq + freqJitter) * signal[signalIdx];
+                    float wave = WaveReal(waveTime, freq + freqJitter);
+                    wave *= signal[signalIdx];
+
+                    waveDot += wave;
                 }
 
                 dotSum += math.abs(waveDot);
@@ -404,11 +408,27 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     */
 
-    private static float Wave(float time, float freq) {
+    private static float WaveReal(float time, float freq) {
         const float twopi = math.PI * 2f;
         const float n = 6; // todo: affects needed window size
         float s = n / (twopi * freq);
-        return math.cos(twopi * time * freq) * math.exp(-(time*time) / (2f * s * s));
+
+        float phase = twopi * time * freq;
+        float gaussian = math.exp(-(time * time) / (2f * s * s));
+        return math.cos(phase) * gaussian;
+    }
+
+    private static float2 WaveComplex(float time, float freq) {
+        const float twopi = math.PI * 2f;
+        const float n = 6; // todo: affects needed window size
+        float s = n / (twopi * freq);
+
+        float phase = twopi * time * freq;
+        float gaussian = math.exp(-(time * time) / (2f * s * s));
+        return new float2(
+            math.cos(phase) * gaussian,
+            math.sin(phase) * gaussian
+        );
     }
 
     private static float Scale2Freq(float scale, TransformConfig cfg) {
