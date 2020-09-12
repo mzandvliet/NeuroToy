@@ -296,7 +296,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float smpPerPeriod = sr / freq;
             float smpPerWave = smpPerPeriod * nHalf * 2;
 
-            int convsPerPix = 1;// + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
+            int convsPerPix = (int)math.ceil((smpPerPix / smpPerWave));// * cfg.convsPerPixMultiplier);
 
             int waveJitterMag = 1 + (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
@@ -308,9 +308,10 @@ public class WaveletAudioConvolution : MonoBehaviour
             float dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
-                var smpStart = p * smpPerPix + (0.5f * smpPerPix) - smpPerWave / 2f;
-                var waveJitter = 0;//rng.NextInt(-waveJitterMag, waveJitterMag+1);
-                var freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
+                // float smpStart = p * smpPerPix + c * convStep;
+                float smpStart = p * smpPerPix + rng.NextFloat(0f, smpPerPix-smpPerWave); // + (0.5f * smpPerPix) - smpPerWave * 0.5f + rng.NextFloat(-0.5f * smpPerPix, 0.5f * smpPerPix)
+                int waveJitter = 0;//rng.NextInt(-waveJitterMag, waveJitterMag+1);
+                float freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
 
                 float waveDot = 0f;
                 for (int w = 0; w <= smpPerWave; w++) {
