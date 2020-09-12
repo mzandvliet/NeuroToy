@@ -43,19 +43,20 @@ public class WaveletAudioConvolution : MonoBehaviour
     private float _signalEnd;
 
     private void Awake() {
+        int sr = _clip.frequency;
+
         _config = new TransformConfig()
         {
             numPixPerScale = 1024,
             numScales = 1024,
-            scalePowBase = 1.009f, // for 1024
+            lowestScale = 16f,
+            highestScale = sr / 2f,
+            scalePowBase = 1.009f, // Todo: provide auto-normalization to highestScale regardless of chosen base
 
             waveTimeJitter = 0.0003f,
             waveFreqJitter = 0.0003f,
             convsPerPixMultiplier = 0.25f,
         };
-
-
-        int sr = _clip.frequency;
 
         _audio = new NativeArray<float>(_clip.samples, Allocator.Persistent); // _clip.samples
 
@@ -119,9 +120,18 @@ public class WaveletAudioConvolution : MonoBehaviour
             GUILayout.Space(16f);
 
             GUILayout.Label(string.Format("Signal Start: {0:0.00} seconds", _signalStart));
-            _signalStart = Mathf.Clamp(GUILayout.HorizontalSlider(_signalStart, 0f, _clip.length), 0f, _signalEnd-0.1f);
+            _signalStart = Mathf.Clamp(GUILayout.HorizontalSlider(_signalStart, 0f, _clip.length), 0f, _signalEnd-0.01f);
             GUILayout.Label(string.Format("Signal End: {0:0.00} seconds", _signalEnd));
-            _signalEnd = Mathf.Clamp(GUILayout.HorizontalSlider(_signalEnd, 0f, _clip.length), _signalStart+0.1f, _clip.length);
+            _signalEnd = Mathf.Clamp(GUILayout.HorizontalSlider(_signalEnd, 0f, _clip.length), _signalStart+0.01f, _clip.length);
+
+            GUILayout.Space(16f);
+
+            GUILayout.Label(string.Format("Base Scale {0:0.00} Hz", _config.lowestScale));
+            _config.lowestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.lowestScale, 0f, _clip.frequency/2f), 0f, _config.highestScale - 1f);
+            GUILayout.Label(string.Format("Highest Scale {0:0.00} Hz", _config.highestScale));
+            _config.highestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.highestScale, _config.lowestScale, _clip.frequency/2f), _config.lowestScale + 1f, _clip.frequency / 2f);
+            GUILayout.Label(string.Format("Scale Power Base {0:0.00}", _config.scalePowBase));
+            _config.scalePowBase = GUILayout.HorizontalSlider(_config.scalePowBase, 0.95f, 2f);
 
             GUILayout.Space(16f);
 
@@ -234,8 +244,9 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         public int numPixPerScale;
         public int numScales;
+        public float lowestScale;
+        public float highestScale;
         public float scalePowBase;
-
 }
 
     [BurstCompile]
@@ -259,12 +270,14 @@ public class WaveletAudioConvolution : MonoBehaviour
             no, we still have to perform the whole convolution in so far as we have signal to work with
             */
 
+            // freq = 200;
+
             Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*128f) * 0xE0EB6C25u);
 
-            const int n = 3;
+            const int nHalf = 3;
             int smpPerPix = signal.Length / cfg.numPixPerScale;
             int smpPerPeriod = (int)math.ceil(sr / freq);
-            int smpPerWave = smpPerPeriod * n * 2;
+            int smpPerWave = smpPerPeriod * nHalf * 2;
 
             int convsPerPix = 1 + (int)math.round((smpPerPix / (float)smpPerWave) * cfg.convsPerPixMultiplier);
 
@@ -272,6 +285,8 @@ public class WaveletAudioConvolution : MonoBehaviour
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
 
             int convStep = smpPerPix / convsPerPix;
+
+            float timeSpan = 1f / freq * nHalf;
 
             float dotSum = 0f;
 
@@ -282,7 +297,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
                 float waveDot = 0f;
                 for (int w = 0; w < smpPerWave; w++) {
-                    float waveTime = -1f + (w / (float)(smpPerWave-1)) * 2f;
+                    float waveTime = -timeSpan + (w / (float)(smpPerWave-1)) * (timeSpan * 2f);
                     int signalIdx = smpStart + w + waveJitter;
 
                     if (signalIdx < 0 || signalIdx >= signal.Length) {
@@ -380,7 +395,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
     private static float Scale2Freq(float scale, TransformConfig cfg) {
         // return math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); // linear'
-        return 16f + Mathf.Pow(cfg.scalePowBase, scale); // power law
+        return cfg.lowestScale + Mathf.Pow(cfg.scalePowBase, scale); // power law
     }
 
     private void ExportPNG() {
