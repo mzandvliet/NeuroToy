@@ -8,6 +8,7 @@ using Rng = Unity.Mathematics.Random;
 /*
 Todo: 
 
+- complex waves
 - put in audio playback with visual cursor scrolling along transformed image
 - Iterative rendering
 - fix a memory leak
@@ -337,7 +338,7 @@ public class WaveletAudioConvolution : MonoBehaviour
                 int waveJitter = 0;//rng.NextInt(-waveJitterMag, waveJitterMag+1);
                 float freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
 
-                float waveDot = 0f;
+                float2 waveDot = 0f;
                 for (int w = 0; w <= smpPerWave; w++) {
                     float waveTime = -timeSpan + (w / smpPerWave) * (timeSpan * 2f);
                     int signalIdx = (int)(smpStart + w + waveJitter);
@@ -346,16 +347,22 @@ public class WaveletAudioConvolution : MonoBehaviour
                         continue;
                     }
 
-                    float wave = WaveReal(waveTime, freq + freqJitter);
-                    wave *= signal[signalIdx];
+                    float2 wave = WaveComplex(waveTime, freq + freqJitter);
+                    wave = Mul(wave, new float2(signal[signalIdx], 0f));
 
                     waveDot += wave;
                 }
 
-                dotSum += math.abs(waveDot);
+                dotSum += math.length(waveDot);
             }
 
             scaleogram[p] = dotSum / (float)convsPerPix;
+        }
+
+        public static Vector2 Mul(float2 a, float2 b) {
+            return new float2(
+                a.x * b.x - a.y * b.y,
+                a.x * b.y + a.y * b.x);
         }
     }
 
@@ -378,9 +385,11 @@ public class WaveletAudioConvolution : MonoBehaviour
         public void Execute() {
             float max = 0f;
             for (int i = 0; i < tex.Length; i++) {
-                tex[i] = new float4(math.log10(1f + tex[i].x), 0f, 0f, 0f);
+                // float mag = math.log10(1f + tex[i].x);
+                float mag = tex[i].x;
+                tex[i] = new float4(mag, 0f, 0f, 0f);
 
-                float mag = math.abs(tex[i].x);
+                mag = math.abs(tex[i].x);
                 if (mag > max) {
                     max = mag;
                 }
