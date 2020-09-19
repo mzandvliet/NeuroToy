@@ -35,7 +35,7 @@ itself be thought of as a wavelet-like structure
 public class WaveletAudioConvolution : MonoBehaviour
 {
     [SerializeField] private AudioClip _clip;
-    [SerializeField] private bool _savePng;
+    [SerializeField] private Renderer _renderer;
 
     private NativeArray<float> _audio;
     private NativeArray<float> _scaleogram;
@@ -76,6 +76,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         _scaleogram = new NativeArray<float>(_config.numPixPerScale, Allocator.Persistent);
         _scaleogramTex = new Texture2D(_config.numPixPerScale, _config.numScales, TextureFormat.RGBAFloat, 4, true);
+        _renderer.sharedMaterial.SetTexture("_MainTex", _scaleogramTex);
 
         
     }
@@ -91,10 +92,10 @@ public class WaveletAudioConvolution : MonoBehaviour
     private float _guiYScale = 1;
 
     private void OnGUI() {
-        GUI.DrawTexture(
-            new Rect(_guiX, _guiY, _scaleogramTex.width * _guiXScale, _scaleogramTex.height * _guiYScale),
-            _scaleogramTex
-        );
+        // GUI.DrawTexture(
+        //     new Rect(_guiX, _guiY, _scaleogramTex.width * _guiXScale, _scaleogramTex.height * _guiYScale),
+        //     _scaleogramTex
+        // );
 
         GUILayout.BeginVertical();
         {
@@ -234,10 +235,6 @@ public class WaveletAudioConvolution : MonoBehaviour
         Debug.LogFormat("Total time: {0} ms", watch.ElapsedMilliseconds);
 
         _scaleogramTex.Apply(true);
-
-        if (_savePng) {
-            ExportPNG();
-        }
     }
 
     private void TestWaveSampling() {
@@ -329,7 +326,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             float timeSpan = 1f / freq * nHalf;
 
-            float dotSum = 0f;
+            float2 dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
                 // float smpStart = p * smpPerPix + c * convStep;
@@ -353,10 +350,10 @@ public class WaveletAudioConvolution : MonoBehaviour
                     waveDot += wave;
                 }
 
-                dotSum += math.length(waveDot);
+                dotSum += waveDot;
             }
 
-            scaleogram[p] = dotSum / (float)convsPerPix;
+            scaleogram[p] = math.atan2(dotSum.x, dotSum.y) / (float)convsPerPix;
         }
 
         public static Vector2 Mul(float2 a, float2 b) {
@@ -385,8 +382,8 @@ public class WaveletAudioConvolution : MonoBehaviour
         public void Execute() {
             float max = 0f;
             for (int i = 0; i < tex.Length; i++) {
-                // float mag = math.log10(1f + tex[i].x);
-                float mag = tex[i].x;
+                float mag = math.log10(1f + tex[i].x);
+                // float mag = tex[i].x;
                 tex[i] = new float4(mag, 0f, 0f, 0f);
 
                 mag = math.abs(tex[i].x);
