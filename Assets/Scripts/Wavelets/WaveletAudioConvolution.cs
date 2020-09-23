@@ -8,8 +8,10 @@ using Rng = Unity.Mathematics.Random;
 /*
 Todo: 
 
-- complex waves
+- complex waves, store complex results as intermediates, leave amplitude or phase extraction to renderer
 - put in audio playback with visual cursor scrolling along transformed image
+- audio resynthesis
+- study intensively the relationships between orthogonality, overcompleness, etc.
 - Iterative rendering
 - fix a memory leak
 - Fix high frequency precision issues
@@ -30,6 +32,13 @@ It's funny, but in thinking of stochastically, adaptively sampling
 the full continuous transform, the image we are building up can
 itself be thought of as a wavelet-like structure
 
+
+---
+
+
+Normalization and log scaling need to be done in a global sense
+
+
 */
 
 public class WaveletAudioConvolution : MonoBehaviour
@@ -45,6 +54,8 @@ public class WaveletAudioConvolution : MonoBehaviour
     private TransformConfig _config;
     private float _signalStart;
     private float _signalEnd;
+
+    private AudioSource _source;
 
     private void Awake() {
         int sr = _clip.frequency;
@@ -78,12 +89,32 @@ public class WaveletAudioConvolution : MonoBehaviour
         _scaleogramTex = new Texture2D(_config.numPixPerScale, _config.numScales, TextureFormat.RGBAFloat, 4, true);
         _renderer.sharedMaterial.SetTexture("_MainTex", _scaleogramTex);
 
-        
+        _source = gameObject.AddComponent<AudioSource>();
+        _source.clip = _clip;
     }
 
     private void OnDestroy() {
         _audio.Dispose();
         _scaleogram.Dispose();
+    }
+
+    private void Update() {
+        if (Input.GetKeyDown(KeyCode.Space)) {
+            if (_source.isPlaying) {
+                _source.Stop();
+            } else {
+                _source.Stop();
+                _source.time = _signalStart;
+                _source.Play();
+            }
+        }
+
+        if (_source.isPlaying && _source.time >= _signalEnd) {
+            _source.Stop();
+        }
+
+        float normalizedTime = (_source.time - _signalStart) / (_signalEnd - _signalStart);
+        _renderer.sharedMaterial.SetFloat("_playTime", normalizedTime);
     }
 
     private float _guiX = 8;
@@ -192,7 +223,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             // Debug.LogFormat("Scale {0}, freq {1:0.00}", scale, freq);
 
             int smpPerPeriod = (int)math.ceil(sr / freq);
-            Debug.LogFormat("Scale {0}, freq {1}, smpPerPeriod {2}", scale, freq, smpPerPeriod);
+            // Debug.LogFormat("Scale {0}, freq {1}, smpPerPeriod {2}", scale, freq, smpPerPeriod);
 
             var trsJob = new TransformJob()
             {
@@ -281,43 +312,18 @@ public class WaveletAudioConvolution : MonoBehaviour
         public void Execute(int p) {
             /*
             Todo:
-            - High frequency issues:
-
-            We see increasing correlation between successively higher scales, until
-            we just get very wide bands of essentially the same convolution result,
-            despite varying wave frequency per discrete scale.
-
-            Effectively we see numerical loss of orthogonality between the wavelets
-            at those higher scales! That's a fun observation.
-
-            Known properties:
-            - discontinuities are linearly coupled to scale/frequency, move with them
-
-            ruled out:
-            - freq or timeSpan being constant over a range of scales
-
-            Likely:
-            - sample window n being constant over a range of scales
-
-            options:
-            - using spacing in samples to compute quantities leads to these bands measuring the same thing
-            - normalization issue dependent on window sample count
-
-            try:
-            - smpStart calculated from center sample in pixel, then offset by a single big float jump
-            - changing float time parameter passed into wave kernel
-            - interpolated sampling of signal using reconstruction kernel, reading in-between samples
-
+            - Remaining high frequency issues
             */
 
             Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*0xCD0445A5u) * 0xE0EB6C25u);
 
             const int nHalf = 3; // todo: from config
             float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
+            float smpPerPixHalf = (smpPerPix) * 0.5f;
             float smpPerPeriod = sr / freq;
-            float smpPerWave = smpPerPeriod * nHalf * 2;
+            float smpPerWave = smpPerPeriod * nHalf * 2f;
 
-            int convsPerPix = (int)math.ceil((smpPerPix / smpPerWave * cfg.convsPerPixMultiplier));
+            int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
 
             int waveJitterMag = 1 + (int)(smpPerPeriod * cfg.waveTimeJitter);
             float freqJitterMag = cfg.waveFreqJitter / freq * smpPerPeriod;
@@ -326,34 +332,32 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             float timeSpan = 1f / freq * nHalf;
 
-            float2 dotSum = 0f;
+            float dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
                 // float smpStart = p * smpPerPix + c * convStep;
-                float halfRange = (smpPerPix) * 0.5f;
-                float smpStart = p * smpPerPix + 0.5f * smpPerPix - 0.5f * smpPerWave + rng.NextFloat(-halfRange, halfRange) * rng.NextFloat(0f, .5f);
-                int waveJitter = 0;//rng.NextInt(-waveJitterMag, waveJitterMag+1);
-                float freqJitter = 0f;//rng.NextFloat(-freqJitterMag, freqJitterMag);
+                
+                float smpStart = p * smpPerPix + 0.5f * smpPerPix - 0.5f * smpPerWave + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
 
-                float2 waveDot = 0f;
+                float waveDot = 0f;
                 for (int w = 0; w <= smpPerWave; w++) {
                     float waveTime = -timeSpan + (w / smpPerWave) * (timeSpan * 2f);
-                    int signalIdx = (int)(smpStart + w + waveJitter);
+                    int signalIdx = (int)(smpStart + w);
 
                     if (signalIdx < 0 || signalIdx >= signal.Length) {
                         continue;
                     }
 
-                    float2 wave = WaveComplex(waveTime, freq + freqJitter);
+                    float2 wave = WaveComplex(waveTime, freq);
                     wave = Mul(wave, new float2(signal[signalIdx], 0f));
 
-                    waveDot += wave;
+                    waveDot += wave.x;
                 }
 
-                dotSum += waveDot;
+                dotSum += math.abs(waveDot);
             }
 
-            scaleogram[p] = math.atan2(dotSum.x, dotSum.y) / (float)convsPerPix;
+            scaleogram[p] = dotSum / (float)convsPerPix;
         }
 
         public static Vector2 Mul(float2 a, float2 b) {
