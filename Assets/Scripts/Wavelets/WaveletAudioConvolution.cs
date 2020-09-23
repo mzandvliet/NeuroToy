@@ -9,7 +9,7 @@ using Rng = Unity.Mathematics.Random;
 Todo: 
 
 - complex waves, store complex results as intermediates, leave amplitude or phase extraction to renderer
-- put in audio playback with visual cursor scrolling along transformed image
+- variable wavelet kernel cycle count n (low-n for low freqs, high-n for high freqs, or adaptive)
 - audio resynthesis
 - study intensively the relationships between orthogonality, overcompleness, etc.
 - Iterative rendering
@@ -67,6 +67,8 @@ public class WaveletAudioConvolution : MonoBehaviour
             lowestScale = 16f,
             highestScale = sr / 2f,
             scalePowBase = 1.009f, // Todo: provide auto-normalization to highestScale regardless of chosen base
+
+            cyclesPerWave = 3,
 
             waveTimeJitter = 0.0003f,
             waveFreqJitter = 0.0003f,
@@ -290,6 +292,8 @@ public class WaveletAudioConvolution : MonoBehaviour
         public float highestScale;
         public float scalePowBase;
 
+        public float cyclesPerWave;
+
         public float _scaleNormalizationFactor;
 
         public void UpdateDerivedProperties() {
@@ -317,7 +321,7 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             Rng rng = new Rng(0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*0xCD0445A5u) * 0xE0EB6C25u);
 
-            const int nHalf = 3; // todo: from config
+            float nHalf = cfg.cyclesPerWave / 2f;
             float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
             float smpPerPixHalf = (smpPerPix) * 0.5f;
             float smpPerPeriod = sr / freq;
@@ -348,13 +352,13 @@ public class WaveletAudioConvolution : MonoBehaviour
                         continue;
                     }
 
-                    float2 wave = WaveComplex(waveTime, freq);
+                    float2 wave = WaveComplex(waveTime, freq, cfg);
                     wave = Mul(wave, new float2(signal[signalIdx], 0f));
 
                     waveDot += wave.x;
                 }
 
-                dotSum += math.abs(waveDot);
+                dotSum += math.abs(waveDot) / smpPerWave;
             }
 
             scaleogram[p] = dotSum / (float)convsPerPix;
@@ -451,10 +455,9 @@ public class WaveletAudioConvolution : MonoBehaviour
         return math.cos(phase) * gaussian;
     }
 
-    private static float2 WaveComplex(float time, float freq) {
+    private static float2 WaveComplex(float time, float freq, TransformConfig cfg) {
         const float twopi = math.PI * 2f;
-        const float n = 6; // todo: affects needed window size
-        float s = n / (twopi * freq);
+        float s = cfg.cyclesPerWave / (twopi * freq);
 
         float phase = twopi * time * freq;
         float gaussian = math.exp(-(time * time) / (2f * s * s));
