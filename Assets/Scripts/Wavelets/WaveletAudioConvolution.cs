@@ -200,7 +200,7 @@ public class WaveletAudioConvolution : MonoBehaviour
                 }
 
                 if (GUILayout.Button("Export PNG")) {
-                    ExportPNG();
+                    WaveletUtils.ExportPNG(_scaleogramTex);
                 }
             }
             GUILayout.EndHorizontal();
@@ -277,7 +277,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         int smpPerWave = smpPerPeriod * 2;
         for (int w = 0; w < smpPerWave; w++) {
             float waveTime = -1f + (w / (float)smpPerWave) * 2f;
-            Debug.LogFormat("t: {0} -> {1}", waveTime, WaveReal(waveTime, freq));
+            Debug.LogFormat("t: {0} -> {1}", waveTime, WaveletUtils.WaveReal(waveTime, freq));
         }
     }
 
@@ -325,8 +325,10 @@ public class WaveletAudioConvolution : MonoBehaviour
             float smpPerPixHalf = (smpPerPix) * 0.5f;
             float smpPerPeriod = sr / freq;
             float smpPerWave = smpPerPeriod * nHalf * 2f;
+            float smpPerWaveInv = 1f / smpPerWave;
 
             int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
+            float convsPerPixInv = 1f / convsPerPix;
             float convStep = smpPerPix / (float)convsPerPix;
 
             float timeSpan = 1f / freq * nHalf;
@@ -340,23 +342,23 @@ public class WaveletAudioConvolution : MonoBehaviour
 
                 float waveDot = 0f;
                 for (int w = 0; w <= smpPerWave; w++) {
-                    float waveTime = -timeSpan + (w / smpPerWave) * (timeSpan * 2f);
+                    float waveTime = -timeSpan + (w * smpPerWaveInv) * (timeSpan * 2f);
                     int signalIdx = (int)(smpStart + w);
 
                     if (signalIdx < 0 || signalIdx >= signal.Length) {
                         continue;
                     }
 
-                    float2 wave = WaveComplex(waveTime, freq, cfg);
+                    float2 wave = WaveletUtils.WaveComplex(waveTime, freq, cfg.cyclesPerWave);
                     wave = Mul(wave, new float2(signal[signalIdx], 0f));
 
                     waveDot += wave.x;
                 }
 
-                dotSum += math.abs(waveDot) / smpPerWave;
+                dotSum += math.abs(waveDot) * smpPerWaveInv;
             }
 
-            scaleogram[p] = dotSum / (float)convsPerPix;
+            scaleogram[p] = dotSum * convsPerPixInv;
         }
 
         public static Vector2 Mul(float2 a, float2 b) {
@@ -419,50 +421,11 @@ public class WaveletAudioConvolution : MonoBehaviour
         }
     }
 
-    /*
-    Wavelet design:
-
-    https://www.wolframalpha.com/input/?i=cos(pi*2+*+t+*+f)+*+exp(-(t*t))+for+f+%3D+6%2C+t+%3D+-4+to+4
-    https://www.wolframalpha.com/input/?i=plot+cos(pi*2+*+t+*+f)+*+exp(-(t^2)+%2F+(2+*+s^2))%2C+n+%3D+6%2C+f+%3D+10%2C+s+%3D+n+%2F+(pi*2*f)%2C++for+t+%3D+-6+to+6
-    https://www.geogebra.org/calculator/wgetejw6
-
-
-    */
-
-    private static float WaveReal(float time, float freq) {
-        const float twopi = math.PI * 2f;
-        const float n = 6; // todo: affects needed window size
-        float s = n / (twopi * freq);
-
-        float phase = twopi * time * freq;
-        float gaussian = math.exp(-(time * time) / (2f * s * s));
-        return math.cos(phase) * gaussian;
-    }
-
-    private static float2 WaveComplex(float time, float freq, TransformConfig cfg) {
-        const float twopi = math.PI * 2f;
-        float s = cfg.cyclesPerWave / (twopi * freq);
-
-        float phase = twopi * time * freq;
-        float gaussian = math.exp(-(time * time) / (2f * s * s));
-        return new float2(
-            math.cos(phase) * gaussian,
-            math.sin(phase) * gaussian
-        );
-    }
-
-    private static float Scale2Freq(float scale, TransformConfig cfg) {
+    public static float Scale2Freq(float scale, TransformConfig cfg) {
         // linear
         // return math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); 
 
         // power law
         return cfg.lowestScale + (Mathf.Pow(cfg.scalePowBase, scale) - 1f) * cfg._scaleNormalizationFactor;
-    }
-
-    private void ExportPNG() {
-        var pngPath = System.IO.Path.Combine(Application.dataPath, string.Format("{0}.png", System.DateTime.Now.ToFileTimeUtc()));
-        var pngBytes = _scaleogramTex.EncodeToPNG();
-        System.IO.File.WriteAllBytes(pngPath, pngBytes);
-        Debug.LogFormat("Wrote image: {0}", pngPath);
     }
 }
