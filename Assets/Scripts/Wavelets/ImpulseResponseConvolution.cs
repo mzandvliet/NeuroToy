@@ -130,15 +130,12 @@ public class ImpulseResponseConvolution : MonoBehaviour
                     output[i + j] += signal[i] * ir[j];
                 }
 
-                // output[i] = math.sin((i / 44100f) * (math.PI * 2f * 440f));
-
                 float absAmp = math.abs(output[i]);
                 if (absAmp > maxAmp) {
                     maxAmp = absAmp;
                 }
             }
 
-            // float normInv = 1f / (float)ir.Length;
             float normInv = 1f / maxAmp;
 
             for (int i = 0; i < output.Length; i++) {

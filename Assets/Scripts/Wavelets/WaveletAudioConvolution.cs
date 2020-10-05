@@ -8,7 +8,8 @@ using Rng = Unity.Mathematics.Random;
 /*
 Todo: 
 
-- complex waves, store complex results as intermediates, leave amplitude or phase extraction to renderer
+- Understand wavelet orthogonality
+- store complex results as intermediates, leave amplitude or phase extraction to renderer
 - variable wavelet kernel cycle count n (low-n for low freqs, high-n for high freqs, or adaptive)
 - audio resynthesis
 - study intensively the relationships between orthogonality, overcompleness, etc.
@@ -200,7 +201,7 @@ public class WaveletAudioConvolution : MonoBehaviour
                 }
 
                 if (GUILayout.Button("Export PNG")) {
-                    WaveletUtils.ExportPNG(_scaleogramTex);
+                    WUtils.ExportPNG(_scaleogramTex);
                 }
             }
             GUILayout.EndHorizontal();
@@ -226,7 +227,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         for (int scale = 0; scale < _config.numScales; scale++) {
             float freq = Scale2Freq(scale, _config);
 
-            var trsJob = new TransformJob()
+            var trsJob = new TransformComplexOscJob()
             {
                 // in
                 signal = signalSlice,
@@ -277,7 +278,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         int smpPerWave = smpPerPeriod * 2;
         for (int w = 0; w < smpPerWave; w++) {
             float waveTime = -1f + (w / (float)smpPerWave) * 2f;
-            Debug.LogFormat("t: {0} -> {1}", waveTime, WaveletUtils.WaveReal(waveTime, freq));
+            Debug.LogFormat("t: {0} -> {1}", waveTime, WUtils.WaveReal(waveTime, freq));
         }
     }
 
@@ -338,7 +339,12 @@ public class WaveletAudioConvolution : MonoBehaviour
             for (int c = 0; c < convsPerPix; c++) {
                 // float smpStart = p * smpPerPix + c * convStep;
                 
-                float smpStart = p * smpPerPix + 0.5f * smpPerPix - 0.5f * smpPerWave + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
+                // Todo: possible precision issues for large values of smpStart, so less precision further out in time...
+                float smpStart =
+                    p * smpPerPix
+                    + 0.5f * smpPerPix
+                    - 0.5f * smpPerWave
+                    + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
 
                 float waveDot = 0f;
                 for (int w = 0; w <= smpPerWave; w++) {
@@ -349,8 +355,8 @@ public class WaveletAudioConvolution : MonoBehaviour
                         continue;
                     }
 
-                    float2 wave = WaveletUtils.WaveComplex(waveTime, freq, cfg.cyclesPerWave);
-                    wave = Mul(wave, new float2(signal[signalIdx], 0f));
+                    float2 wave = WUtils.WaveComplex(waveTime, freq, cfg.cyclesPerWave);
+                    wave = WUtils.CMul(wave, new float2(signal[signalIdx], 0f));
 
                     waveDot += wave.x;
                 }
@@ -360,11 +366,87 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             scaleogram[p] = dotSum * convsPerPixInv;
         }
+    }
 
-        public static Vector2 Mul(float2 a, float2 b) {
-            return new float2(
-                a.x * b.x - a.y * b.y,
-                a.x * b.y + a.y * b.x);
+    [BurstCompile]
+    public struct TransformComplexOscJob : IJobParallelFor {
+        [ReadOnly] public NativeSlice<float> signal;
+        [ReadOnly] public float freq;
+        [ReadOnly] public int sr;
+        [ReadOnly] public TransformConfig cfg;
+        [ReadOnly] public uint tick;
+
+        [WriteOnly] public NativeSlice<float> scaleogram;
+
+        /*
+        Rewrite of the transform kernel, with different inner loop.
+
+        Realized the accumulator prevents loop vectorization, as it violates
+        parallel execution constraints. So then, if inner loop will run serial,
+        why not optimize calculations for serial use? Deploy a complex oscillator
+        implemented by float 2 and complex multiplies to sequentially generate the
+        sin/cos values needed, without calling math.sin/math.cos outside of init.
+
+        Yields a 2x speedup over naive implementation.
+
+        Todo:
+        
+        - can we serialize the algorithm for generating the Gaussian window?
+        */
+
+        public void Execute(int p) {
+
+            Rng rng = new Rng(tick * 0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq * 0xCD0445A5u) * 0xE0EB6C25u);
+
+            float nHalf = cfg.cyclesPerWave / 2f;
+            float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
+            float smpPerPixHalf = (smpPerPix) * 0.5f;
+            float smpPerPeriod = sr / freq;
+            float smpPerWave = smpPerPeriod * nHalf * 2f;
+            float smpPerWaveInv = 1f / smpPerWave;
+
+            int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
+            float convsPerPixInv = 1f / convsPerPix;
+            float convStep = smpPerPix / (float)convsPerPix;
+
+            float timeSpan = 1f / freq * nHalf;
+
+            float dotSum = 0f;
+
+            float phaseStep = timeSpan * 2f * smpPerWaveInv;
+            float2 waveOscStep = WUtils.GetWaveOsc(phaseStep, freq, cfg.cyclesPerWave);
+            float waveStdev = WUtils.WaveStdev(phaseStep, freq, cfg.cyclesPerWave);
+            float2 wave = new float2(1,0);
+
+            
+
+            for (int c = 0; c < convsPerPix; c++) {
+                // Todo: possible precision issues for large values of smpStart, so less precision further out in time...
+                float smpStart = 
+                    p * smpPerPix
+                    + 0.5f * smpPerPix
+                    - 0.5f * smpPerWave
+                    + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
+
+                smpStart = math.clamp(smpStart, 0f, signal.Length - smpPerWave);
+
+                float waveTime = -timeSpan;
+                float waveDot = 0f;
+
+                for (int w = 0; w <= smpPerWave; w++) {
+                    int signalIdx = (int)(smpStart + w);
+
+                    var conv = WUtils.CMul(wave, new float2(signal[signalIdx], 0f)) * WUtils.GaussianEnvelope(waveTime, waveStdev);
+                    waveDot += conv.x;
+
+                    wave = WUtils.CMul(wave, waveOscStep);
+                    waveTime += phaseStep;
+                }
+
+                dotSum += math.abs(waveDot) * smpPerWaveInv;
+            }
+
+            scaleogram[p] = dotSum * convsPerPixInv;
         }
     }
 
@@ -427,5 +509,9 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         // power law
         return cfg.lowestScale + (Mathf.Pow(cfg.scalePowBase, scale) - 1f) * cfg._scaleNormalizationFactor;
+    }
+
+    public static float MidiToFreq(int note) {
+        return 27.5f * Mathf.Pow(2f, (note - 21) / 12f);
     }
 }
