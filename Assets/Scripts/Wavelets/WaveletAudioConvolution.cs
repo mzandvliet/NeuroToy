@@ -68,7 +68,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             highestScale = sr / 2f,
             scalePowBase = 1.009f, // Todo: provide auto-normalization to highestScale regardless of chosen base
 
-            cyclesPerWave = 3,
+            cyclesPerWave = 8f,
 
             convsPerPixMultiplier = 0.25f,
         };
@@ -131,7 +131,7 @@ public class WaveletAudioConvolution : MonoBehaviour
     private float _guiXScale = 1;
     private float _guiYScale = 1;
     private float _bias = 0f;
-    private float _gain = 20f;
+    private float _gain = 1f;
 
     private void OnGUI() {
         // GUILayout.BeginVertical();
@@ -227,7 +227,8 @@ public class WaveletAudioConvolution : MonoBehaviour
         for (int scale = 0; scale < _config.numScales; scale++) {
             float freq = Scale2Freq(scale, _config);
 
-            var trsJob = new TransformComplexOscJob()
+            var trsJob = new TransformJob()
+            // var trsJob = new TransformComplexOscJob()
             {
                 // in
                 signal = signalSlice,
@@ -250,6 +251,11 @@ public class WaveletAudioConvolution : MonoBehaviour
             };
             handle = toTexJob.Schedule(scaleogramLine.Length, 32, handle);
         }
+
+        var normJob = new LogScaleNormalizeJob() {
+            tex = tex,
+        };
+        handle = normJob.Schedule(handle);
 
         var visJob = new VisualizeJob()
         {
@@ -278,7 +284,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         int smpPerWave = smpPerPeriod * 2;
         for (int w = 0; w < smpPerWave; w++) {
             float waveTime = -1f + (w / (float)smpPerWave) * 2f;
-            Debug.LogFormat("t: {0} -> {1}", waveTime, WUtils.WaveReal(waveTime, freq));
+            Debug.LogFormat("t: {0} -> {1}", waveTime, WUtils.WaveReal(waveTime, freq, _config.cyclesPerWave));
         }
     }
 
@@ -317,6 +323,17 @@ public class WaveletAudioConvolution : MonoBehaviour
             /*
             Todo:
             - Keep track of highest amplitude found for free normalization
+
+            - Interpolated sampling for high frequency content, such that
+            we no longer get artifacts due to neighbouring frequencies
+            convolving from exactly the same discrete place in sample-space
+
+            For lowest freqs, various forms of undersampling are fine. This
+            is also where currently the most work is situated hands-down,
+            as each wave convolution takes maaaany sample multiplies.
+
+            For medium freqs we will need 1st order interpolation, higher
+            will need quadratic. We could max it out at cubic near nyquist.
             */
 
             Rng rng = new Rng(tick * 0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*0xCD0445A5u) * 0xE0EB6C25u);
@@ -325,7 +342,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
             float smpPerPixHalf = (smpPerPix) * 0.5f;
             float smpPerPeriod = sr / freq;
-            float smpPerWave = smpPerPeriod * nHalf * 2f;
+            float smpPerWave = smpPerPeriod * cfg.cyclesPerWave;
             float smpPerWaveInv = 1f / smpPerWave;
 
             int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
@@ -337,14 +354,14 @@ public class WaveletAudioConvolution : MonoBehaviour
             float dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
-                // float smpStart = p * smpPerPix + c * convStep;
+                float smpStart = p * smpPerPix + c * convStep - 0.5f * smpPerWave + rng.NextFloat(-0.01f, 0.01f) * smpPerPeriod;
                 
                 // Todo: possible precision issues for large values of smpStart, so less precision further out in time...
-                float smpStart =
-                    p * smpPerPix
-                    + 0.5f * smpPerPix
-                    - 0.5f * smpPerWave
-                    + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
+                // float smpStart =
+                //     p * smpPerPix
+                //     + 0.5f * smpPerPix
+                //     - 0.5f * smpPerWave
+                //     + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
 
                 float waveDot = 0f;
                 for (int w = 0; w <= smpPerWave; w++) {
@@ -402,7 +419,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
             float smpPerPixHalf = (smpPerPix) * 0.5f;
             float smpPerPeriod = sr / freq;
-            float smpPerWave = smpPerPeriod * nHalf * 2f;
+            float smpPerWave = smpPerPeriod * cfg.cyclesPerWave;
             float smpPerWaveInv = 1f / smpPerWave;
 
             int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
@@ -471,6 +488,28 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         public void Execute(int i) {
             targetTex[(rowIdx * cfg.numPixPerScale + i)] = new float4((targetTex[(rowIdx * cfg.numPixPerScale + i)].x + row[i]) / 2f);
+        }
+    }
+
+    [BurstCompile]
+    public struct LogScaleNormalizeJob : IJob {
+        public NativeArray<float4> tex;
+
+        public void Execute() {
+            float max = 0f;
+            for (int i = 0; i < tex.Length; i++) {
+                tex[i] = new float4(math.log10(1f + tex[i].x), 0f, 0f, 0f);
+
+                float mag = math.abs(tex[i].x);
+                if (mag > max) {
+                    max = mag;
+                }
+            }
+
+            float maxInv = 1f / max;
+            for (int i = 0; i < tex.Length; i++) {
+                tex[i] *= maxInv;
+            }
         }
     }
 

@@ -19,10 +19,8 @@ public static class WUtils {
     const float twopi = math.PI * 2f;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float WaveReal(float time, float freq) {
-        const float n = 6; // todo: affects needed window size
-        float s = n / (twopi * freq);
-
+    public static float WaveReal(float time, float freq, float cyclesPerWave) {
+        float s = WaveStdev(time, freq, cyclesPerWave);
         float phase = twopi * time * freq;
         float gaussian = GaussianEnvelope(time, s);
         return math.cos(phase) * gaussian;
