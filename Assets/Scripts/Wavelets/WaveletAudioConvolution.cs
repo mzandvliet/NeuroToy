@@ -11,6 +11,7 @@ Todo:
 - Understand wavelet orthogonality
 - store complex results as intermediates, leave amplitude or phase extraction to renderer
 - variable wavelet kernel cycle count n (low-n for low freqs, high-n for high freqs, or adaptive)
+- fit parameterized curves to trends and momenta (tracking frequency, phase, amplitude)
 - audio resynthesis
 - study intensively the relationships between orthogonality, overcompleness, etc.
 - Iterative rendering
@@ -28,6 +29,17 @@ Ideas:
     - jitter in time, but also in scale/freq
 
 - Quadtree datastructure for tracking measurements
+
+- Optimizations
+    - Skip samples in convolution
+        - What if you skip every other sample, or only multiply one in every p samples in a single wave convolution?
+        - Maybe a skip-step that is relatively prime to the frequency of the wave?
+    - Early-out in areas where preliminary tests reveal little to no relevant energy
+    - Prefilter and lower samplerate before convolving lower-frequency parts of the signal
+    - Convolve superpositions of many waves
+        - Interleave harmonic wave convolutions, since they share samples.
+        - Or interleave relatively prime waves since they do not.
+
 
 It's funny, but in thinking of stochastically, adaptively sampling
 the full continuous transform, the image we are building up can
@@ -66,7 +78,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             numScales = 1024,
             lowestScale = 16f,
             highestScale = sr / 2f,
-            scalePowBase = 1.009f, // Todo: provide auto-normalization to highestScale regardless of chosen base
+            scalePowBase = 1.009f,
 
             cyclesPerWave = 8f,
 
@@ -121,7 +133,6 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         float normalizedTime = (_source.time - _signalStart) / (_signalEnd - _signalStart);
         _renderer.sharedMaterial.SetFloat("_playTime", normalizedTime);
-
         _renderer.sharedMaterial.SetFloat("_bias", _bias);
         _renderer.sharedMaterial.SetFloat("_gain", _gain);
     }
@@ -134,23 +145,25 @@ public class WaveletAudioConvolution : MonoBehaviour
     private float _gain = 1f;
 
     private void OnGUI() {
-        // GUILayout.BeginVertical();
-        // {
-        //     const int labelHeight = 32;
-        //     float scaledHeight = _scaleogramTex.height * _guiYScale;
-        //     int numScaleLabels = Mathf.RoundToInt(scaledHeight / labelHeight);
-        //     float scaleStep = (float)_config.numScales / (numScaleLabels-1);
-        //     float heightStep = scaledHeight / (numScaleLabels-1);
-        //     for (int i = 0; i < numScaleLabels; i++) {
-        //         GUI.Label(new Rect(
-        //             _guiX,
-        //             _guiY + scaledHeight - heightStep * i - labelHeight * 0.5f,
-        //             100f,
-        //             labelHeight),
-        //             string.Format("{0}Hz", Scale2Freq(i * scaleStep, _config)));
-        //     }
-        // }
-        // GUILayout.EndVertical();
+        GUI.DrawTexture(new Rect(_guiX, _guiY, _scaleogramTex.width * _guiXScale, _scaleogramTex.height * _guiYScale), _scaleogramTex);
+
+        GUILayout.BeginVertical();
+        {
+            const int labelHeight = 32;
+            float scaledHeight = _scaleogramTex.height * _guiYScale;
+            int numScaleLabels = Mathf.RoundToInt(scaledHeight / labelHeight);
+            float scaleStep = (float)_config.numScales / (numScaleLabels-1);
+            float heightStep = scaledHeight / (numScaleLabels-1);
+            for (int i = 0; i < numScaleLabels; i++) {
+                GUI.Label(new Rect(
+                    _guiX,
+                    _guiY + scaledHeight - heightStep * i - labelHeight * 0.5f,
+                    100f,
+                    labelHeight),
+                    string.Format("{0}Hz", Scale2Freq(i * scaleStep, _config)));
+            }
+        }
+        GUILayout.EndVertical();
 
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(1000f));
         {
@@ -170,7 +183,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             GUILayout.Space(16f);
 
             GUILayout.Label(string.Format("Lowest Scale {0:0.00} Hz", _config.lowestScale));
-            _config.lowestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.lowestScale, 0f, _clip.frequency/2f), 0f, _config.highestScale - 1f);
+            _config.lowestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.lowestScale, 1f, _clip.frequency/2f), 0f, _config.highestScale - 1f);
             GUILayout.Label(string.Format("Highest Scale {0:0.00} Hz", _config.highestScale));
             _config.highestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.highestScale, _config.lowestScale, _clip.frequency/2f), _config.lowestScale + 1f, _clip.frequency / 2f);
             GUILayout.Label(string.Format("Scale Power Base {0:0.00}", _config.scalePowBase));
@@ -185,7 +198,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             _config.numScales = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.numScales), 4, 12)));
 
             GUILayout.Label(string.Format("Convs Per Pixel Multiplier: {0:0.00}", _config.convsPerPixMultiplier));
-            _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0f, 64f);
+            _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0.1f, 64f);
 
             GUILayout.Label(string.Format("Bias: {0:0.0000}", _bias));
             _bias = GUILayout.HorizontalSlider(_bias, -1f, 1f);
@@ -266,6 +279,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         while (!handle.IsCompleted) {
             yield return new WaitForEndOfFrame();
         }
+        handle.Complete();
 
         watch.Stop();
         Debug.LogFormat("Total time: {0} ms", watch.ElapsedMilliseconds);
@@ -354,7 +368,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
-                float smpStart = p * smpPerPix + c * convStep - 0.5f * smpPerWave + rng.NextFloat(-0.01f, 0.01f) * smpPerPeriod;
+                float smpStart = p * smpPerPix + c * convStep - 0.5f * smpPerWave + rng.NextFloat(-0.005f, 0.005f) * smpPerPeriod;
                 
                 // Todo: possible precision issues for large values of smpStart, so less precision further out in time...
                 // float smpStart =
@@ -408,7 +422,9 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         Todo:
         
-        - can we serialize the algorithm for generating the Gaussian window?
+        - can we use an iterative algorithm for generating the Gaussian window?
+            - A logistic map might work
+            - An n-th order polynomial approximation might work too
         */
 
         public void Execute(int p) {

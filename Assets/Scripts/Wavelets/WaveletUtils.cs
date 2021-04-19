@@ -32,8 +32,8 @@ public static class WUtils {
         float phase = twopi * time * freq;
         float gaussian = GaussianEnvelope(time, s);
         return new float2(
-            math.cos(phase) * gaussian,
-            math.sin(phase) * gaussian
+            math.sin(phase) * gaussian,
+            math.cos(phase) * gaussian
         );
     }
 
