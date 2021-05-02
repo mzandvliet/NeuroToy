@@ -170,10 +170,8 @@ public class WaveletAudioConvolution : MonoBehaviour
         }
 
         UpdatePlayback();
-        UpdateCamera();
+        UpdateUI();
     }
-
-    
 
     private void UpdatePlayback() {
         if (Input.GetKeyDown(KeyCode.Space)) {
@@ -199,7 +197,11 @@ public class WaveletAudioConvolution : MonoBehaviour
     private float3 _smoothScroll;
     private float2 _smoothZoom;
     private float2 _zoomLevel = new float2(1, 1);
-    private void UpdateCamera() {
+    private void UpdateUI() {
+        if (Input.GetKeyDown(KeyCode.Escape)) {
+            _showGui = !_showGui;
+        }
+
         float3 scrollInput = float3.zero;
         float2 zoomInput = float2.zero;
 
@@ -228,14 +230,9 @@ public class WaveletAudioConvolution : MonoBehaviour
         }
 
         var data = _signal;
-
         var drawRect = new Rect(0f, 0f, 240f * _zoomLevel.x, 10f * _zoomLevel.y);
-
         var timeRange = new TimeRange((long)_signalStart, _signalEnd - _signalStart);
        
-        // DrawScaleLabels(cam, drawRect, _cfg);
-        // DrawHorizontalLabels(cam, drawRect, _trades, timeRange);
-
         DrawControls(_camera, drawRect, _config, timeRange);
 
         var cameraLocalPos = _scaleogramRenderer.transform.InverseTransformPoint(_camera.transform.position);
@@ -267,6 +264,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         }
     }
 
+    private bool _showGui = true;
     private float _guiX = 8;
     private float _guiY = 8;
     private float _guiXScale = 1;
@@ -275,6 +273,10 @@ public class WaveletAudioConvolution : MonoBehaviour
     private float _gain = 1f;
 
     private void OnGUI() {
+        if (!_showGui) {
+            return;
+        }
+
         float drawSize = Mathf.Min(Screen.width, Screen.height);
         // GUI.DrawTexture(new Rect(0, 0, drawSize, drawSize), _scaleogramTex);
 
@@ -437,7 +439,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float smpPerWave = smpPerCycle * cfg.cyclesPerWave;
             float smpPerWaveInv = 1f / smpPerWave;
 
-            int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
+            int convsPerPix = 4;//(int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
             float convsPerPixInv = 1f / convsPerPix;
             float convStep = smpPerPix / (float)convsPerPix;
 
@@ -446,7 +448,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
-                float freq = centerFreq + rng.NextFloat(-0.001f, 0.001f) * centerFreq;
+                float freq = centerFreq + rng.NextFloat(-0.002f, 0.002f) * centerFreq;
                 smpPerCycle = sr / freq;
                 smpPerWave = smpPerCycle * cfg.cyclesPerWave;
                 smpPerWaveInv = 1f / smpPerWave;
@@ -470,7 +472,7 @@ public class WaveletAudioConvolution : MonoBehaviour
                     waveDot += wave.x;
                 }
 
-                dotSum += math.abs(waveDot) * smpPerWaveInv;
+                dotSum += waveDot;
             }
 
             scaleogram[p] = dotSum * convsPerPixInv;
