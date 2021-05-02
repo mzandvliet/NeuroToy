@@ -3,6 +3,9 @@
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
+        _Gain("Gain", Float) = 1.0
+        _Bias("Bias", Float) = 0.0
+        _HueShift("Hue Shift", Float) = 0.0
     }
     SubShader
     {
@@ -34,9 +37,9 @@
 
             sampler2D _MainTex;
             float4 _MainTex_ST;
-            float _playTime; // normalized play time within visible window
-            float _bias;
-            float _gain;
+            float _Bias = 0;
+            float _Gain = 1;
+            float _HueShift = 0;
 
             v2f vert (appdata v)
             {
@@ -47,21 +50,62 @@
                 return o;
             }
 
+            float3 HUEtoRGB(in float H)
+            {
+                float R = abs(H * 6 - 3) - 1;
+                float G = 2 - abs(H * 6 - 2);
+                float B = 2 - abs(H * 6 - 4);
+                return saturate(float3(R,G,B));
+            }
+
+            float3 hsvToRgb(float3 HSV)
+            {
+                float3 RGB = HUEtoRGB(HSV.x);
+                return ((RGB - 1) * HSV.y + 1) * HSV.z;
+            }
+
             fixed4 frag (v2f i) : SV_Target
             {
-                // sample the texture
-                fixed4 col = tex2D(_MainTex, i.uv);
+                // sample the data
+                float v = tex2D(_MainTex, i.uv).x;
 
-                col = (col - _bias) * _gain;
+                /* 
+                
+                First we try to undo the visual skew towards the lower frequencies by
+                diminishing the energy shown there proportionally, so that the image
+                can give a decent estimate of energy per area.
 
-                // Todo: normalize, log scaling
-                // float mag = math.log10(1f + tex[i].x);
+                Relates to this line in the C# code:
 
-                const float playHeadBand = 0.05;
-                const float playHeadPow = 2.0;
-                float playHeadProximity = pow(1.0 - clamp(abs(i.uv.x-_playTime), 0.0, playHeadBand) * (1.0 / playHeadBand), playHeadPow);
-                // col = lerp(col, fixed4(1,1,1,1), playHeadProximity);
-                col *= 1.5 + playHeadProximity * 8;
+                float Scale2Freq() {
+                    return cfg.lowestScale + (Mathf.Pow(cfg.scalePowBase, scale) - 1f) * cfg._scaleNormalizationFactor;
+                }
+
+                */
+                
+                v *= log(1 + i.uv.y) / log(1.0251);
+
+                v += _Bias;
+                v *= _Gain;
+                
+                /* 
+                Logarithmic scaling which emphasizes higher frequency action
+                */
+                v = sign(v) * log10(1.0 + abs(v));
+
+                // Simple 2 color spectrum
+                // float4 colPos = float4(0, 100.0 / 255.0, 255.0 / 255.0,1);
+                // float4 colNeg = float4(255.0 / 255.0,100.0 / 255.0,0,1);
+                // float4 col =
+                //     colNeg * max(0, -1.0 * v) +
+                //     colPos * max(0,  1 * v)
+
+
+                /*
+                Hue shifts based on magnitude, so we get contours
+                */
+                float hue = frac(_HueShift + 0.5 + 0.5 * v);
+                float4 col = float4(hsvToRgb(float3(hue, 1, abs(v))), 1);
 
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);

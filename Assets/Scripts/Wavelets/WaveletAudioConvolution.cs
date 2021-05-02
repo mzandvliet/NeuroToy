@@ -59,25 +59,27 @@ public class WaveletAudioConvolution : MonoBehaviour
     [SerializeField] private AudioClip _clip;
     [SerializeField] private Renderer _renderer;
 
-    private NativeArray<float> _audio;
+    private NativeArray<float> _signal;
 
     private Texture2D _scaleogramTex;
 
     private TransformConfig _config;
     private float _signalStart;
     private float _signalEnd;
+    private float _samplerate;
 
     private AudioSource _source;
+    private NativeList<int> _primes;
 
     private void Awake() {
-        int sr = _clip.frequency;
+        _samplerate = _clip.frequency;
 
         _config = new TransformConfig()
         {
-            numPixPerScale = 1024,
+            texWidth = 1024,
             numScales = 1024,
             lowestScale = 16f,
-            highestScale = sr / 2f,
+            highestScale = _samplerate / 2f,
             scalePowBase = 1.009f,
 
             cyclesPerWave = 8f,
@@ -86,31 +88,68 @@ public class WaveletAudioConvolution : MonoBehaviour
         };
         _config.UpdateDerivedProperties();
 
-        _audio = new NativeArray<float>(_clip.samples, Allocator.Persistent); // _clip.samples
+        _signal = new NativeArray<float>(_clip.samples, Allocator.Persistent); 
 
         var data = new float[_clip.samples];
         _clip.GetData(data, 0);
-        for (int i = 0; i < _audio.Length; i++) {
-            _audio[i] = data[i];
+        for (int i = 0; i < _signal.Length; i++) {
+            _signal[i] = data[i];
         }
 
         _signalStart = 0f;
         _signalEnd = _clip.length;
 
-        _scaleogramTex = new Texture2D(_config.numPixPerScale, _config.numScales, TextureFormat.RGBAFloat, 4, true);
+        _scaleogramTex = new Texture2D(_config.texWidth, _config.numScales, TextureFormat.RFloat, 0, true);
+        _scaleogramTex.anisoLevel = 8;
+        _scaleogramTex.wrapMode = TextureWrapMode.Clamp;
         _renderer.sharedMaterial.SetTexture("_MainTex", _scaleogramTex);
 
         _source = gameObject.AddComponent<AudioSource>();
         _source.clip = _clip;
+
+        _primes = new NativeList<int>(Allocator.Persistent);
+        _primes.Add(1); // LOL
+        _primes.Add(2);
+        _primes.Add(3);
+        _primes.Add(5);
+        _primes.Add(7);
+        _primes.Add(11);
+        _primes.Add(13);
+        _primes.Add(17);
+        _primes.Add(19);
+        _primes.Add(23);
+        _primes.Add(29);
+        _primes.Add(31);
+        _primes.Add(37);
+        _primes.Add(41);
+        _primes.Add(43);
+        _primes.Add(47);
+        _primes.Add(53);
+        _primes.Add(59);
+        _primes.Add(61);
+        _primes.Add(67);
+        _primes.Add(71);
+        _primes.Add(73);
+        _primes.Add(79);
+        _primes.Add(83);
+        _primes.Add(89);
+        _primes.Add(97);
+        _primes.Add(101);
+        _primes.Add(103);
+        _primes.Add(107);
+        _primes.Add(109);
+        _primes.Add(113);
+        _primes.Add(127);
     }
 
     private void OnDestroy() {
-        _audio.Dispose();
+        _signal.Dispose();
+        _primes.Dispose();
     }
 
     private void Update() {
-        if (_scaleogramTex.width != _config.numPixPerScale || _scaleogramTex.height != _config.numScales) {
-            _scaleogramTex.Resize(_config.numPixPerScale, _config.numScales);
+        if (_scaleogramTex.width != _config.texWidth || _scaleogramTex.height != _config.numScales) {
+            _scaleogramTex.Resize(_config.texWidth, _config.numScales);
         }
 
         UpdatePlayback();
@@ -145,25 +184,8 @@ public class WaveletAudioConvolution : MonoBehaviour
     private float _gain = 1f;
 
     private void OnGUI() {
-        GUI.DrawTexture(new Rect(_guiX, _guiY, _scaleogramTex.width * _guiXScale, _scaleogramTex.height * _guiYScale), _scaleogramTex);
-
-        GUILayout.BeginVertical();
-        {
-            const int labelHeight = 32;
-            float scaledHeight = _scaleogramTex.height * _guiYScale;
-            int numScaleLabels = Mathf.RoundToInt(scaledHeight / labelHeight);
-            float scaleStep = (float)_config.numScales / (numScaleLabels-1);
-            float heightStep = scaledHeight / (numScaleLabels-1);
-            for (int i = 0; i < numScaleLabels; i++) {
-                GUI.Label(new Rect(
-                    _guiX,
-                    _guiY + scaledHeight - heightStep * i - labelHeight * 0.5f,
-                    100f,
-                    labelHeight),
-                    string.Format("{0}Hz", Scale2Freq(i * scaleStep, _config)));
-            }
-        }
-        GUILayout.EndVertical();
+        float drawSize = Mathf.Min(Screen.width, Screen.height);
+        // GUI.DrawTexture(new Rect(0, 0, drawSize, drawSize), _scaleogramTex);
 
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(1000f));
         {
@@ -175,47 +197,52 @@ public class WaveletAudioConvolution : MonoBehaviour
 
             GUILayout.Space(16f);
 
-            GUILayout.Label(string.Format("Signal Start: {0:0.00} seconds", _signalStart));
-            _signalStart = Mathf.Clamp(GUILayout.HorizontalSlider(_signalStart, 0f, _clip.length), 0f, _signalEnd-0.01f);
-            GUILayout.Label(string.Format("Signal End: {0:0.00} seconds", _signalEnd));
-            _signalEnd = Mathf.Clamp(GUILayout.HorizontalSlider(_signalEnd, 0f, _clip.length), _signalStart+0.01f, _clip.length);
+            GUILayout.Label(string.Format("Signal Start: {0:0.00} periods", _signalStart));
+            _signalStart = Mathf.Clamp(GUILayout.HorizontalSlider(_signalStart, 0f, _signal.Length / _samplerate), 0f, _signalEnd - 0.01f);
+            GUILayout.Label(string.Format("Signal End: {0:0.00} periods", _signalEnd));
+            _signalEnd = Mathf.Clamp(GUILayout.HorizontalSlider(_signalEnd, 0f, _signal.Length / _samplerate), _signalStart + 0.01f, _signal.Length / _samplerate);
+            GUILayout.Label(string.Format("Signal's max freq: {0:0.00} Hz", math.min(_samplerate / 2f, ((_signalEnd - _signalStart) * (_samplerate / 2f)))));
+            GUILayout.Label(string.Format("Signal's min freq: {0:0.00} Hz", _config.cyclesPerWave / (_signalEnd - _signalStart)));
 
             GUILayout.Space(16f);
-
-            GUILayout.Label(string.Format("Lowest Scale {0:0.00} Hz", _config.lowestScale));
-            _config.lowestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.lowestScale, 1f, _clip.frequency/2f), 0f, _config.highestScale - 1f);
-            GUILayout.Label(string.Format("Highest Scale {0:0.00} Hz", _config.highestScale));
-            _config.highestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.highestScale, _config.lowestScale, _clip.frequency/2f), _config.lowestScale + 1f, _clip.frequency / 2f);
-            GUILayout.Label(string.Format("Scale Power Base {0:0.00}", _config.scalePowBase));
-            _config.scalePowBase = GUILayout.HorizontalSlider(_config.scalePowBase, 1.000001f, 1.25f);
+            GUILayout.Label(string.Format("Cycles per morlet wave {0}", _config.cyclesPerWave));
+            _config.cyclesPerWave = Mathf.Clamp((int)math.round(GUILayout.HorizontalSlider(_config.cyclesPerWave, 1, 32)), 1, 32);
+            GUILayout.Label(string.Format("Lowest Scale {0:0.00} cycles/period", _config.lowestScale));
+            _config.lowestScale = -1f + math.pow(2f, Mathf.Clamp(GUILayout.HorizontalSlider(math.log2(1f + _config.lowestScale), math.log2(1f + 0.06f), math.log2(1f + _samplerate / 2f)), 0f, math.log2(1f + _config.highestScale - 1)));
+            GUILayout.Label(string.Format("Highest Scale {0:0.00} cycles/period", _config.highestScale));
+            _config.highestScale = Mathf.Clamp(GUILayout.HorizontalSlider(_config.highestScale, _config.lowestScale, _samplerate / 2f), _config.lowestScale + 1f, _samplerate / 2f);
+            GUILayout.Label(string.Format("Scale Power Base {0:0.0000}", _config.scalePowBase));
+            _config.scalePowBase = GUILayout.HorizontalSlider(_config.scalePowBase, 1.0f, 1.25f);
 
             _config.UpdateDerivedProperties();
 
             GUILayout.Space(16f);
 
-            GUILayout.Label(string.Format("Resolution: {0} x {1}", _config.numPixPerScale, _config.numScales));
-            _config.numPixPerScale = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.numPixPerScale), 4, 12)));
+            GUILayout.Label(string.Format("Resolution: {0} x {1}", _config.texWidth, _config.numScales));
+            _config.texWidth = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.texWidth), 4, 16)));
             _config.numScales = (int)math.pow(2, Mathf.RoundToInt(GUILayout.HorizontalSlider(math.log2(_config.numScales), 4, 12)));
+            GUILayout.Label(string.Format("Tex size: {0}, bytes: {1}", _config.texWidth * _config.numScales, _config.texWidth * _config.numScales * 4));
+            GUILayout.Label(string.Format("Tex max freq: {0:0.00} Hz", ((_signalEnd - _signalStart) * (_samplerate / 2f)) / _config.texWidth));
 
             GUILayout.Label(string.Format("Convs Per Pixel Multiplier: {0:0.00}", _config.convsPerPixMultiplier));
-            _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0.1f, 64f);
+            _config.convsPerPixMultiplier = GUILayout.HorizontalSlider(_config.convsPerPixMultiplier, 0.001f, 32f);
 
-            GUILayout.Label(string.Format("Bias: {0:0.0000}", _bias));
-            _bias = GUILayout.HorizontalSlider(_bias, -1f, 1f);
-
-            GUILayout.Label(string.Format("Gain: {0:0.0000}", _gain));
-            _gain = GUILayout.HorizontalSlider(_gain, 0.1f, 100f);
-            
             GUILayout.BeginHorizontal();
-            {   
+            {
                 GUI.enabled = _transformRoutine == null;
                 if (GUILayout.Button("Transform")) {
                     _transformRoutine = StartCoroutine(TransformAsync());
                 }
 
-                if (GUILayout.Button("Export PNG")) {
-                    WUtils.ExportPNG(_scaleogramTex);
-                }
+                // if (GUILayout.Button("Export PNG")) {
+                //     string pngPath = Path.Combine(Util.GetProjectFolder("Datasets"), $"{_dataName}.png");
+                //     WUtils.SavePng(_scaleogramTex, pngPath);
+                // }
+
+                // if (GUILayout.Button("Export Floats")) {
+                //     string path = Path.Combine(Util.GetProjectFolder("Datasets"), $"{_dataName}.floats");
+                //     WUtils.SaveRawFloats(_scaleogramTex.GetPixelData<float>(0), path);
+                // }
             }
             GUILayout.EndHorizontal();
         }
@@ -225,34 +252,36 @@ public class WaveletAudioConvolution : MonoBehaviour
     private Coroutine _transformRoutine;
 
     private System.Collections.IEnumerator TransformAsync() {
-        var scaleogramLine = new NativeArray<float>(_config.numPixPerScale, Allocator.Persistent);
+        var scaleogramLine = new NativeArray<float>(_config.texWidth, Allocator.Persistent);
+        var tex = _scaleogramTex.GetPixelData<float>(0);
 
-        int sr = _clip.frequency;
-        var tex = _scaleogramTex.GetPixelData<float4>(0);
-
-        var signalSlice = _audio.Slice(
-            (int)(_clip.frequency * _signalStart),
-            (int)(_clip.frequency * (_signalEnd-_signalStart)));
+        var signalSlice = _signal.Slice(
+            (int)(_samplerate * _signalStart),
+            (int)(_samplerate * (_signalEnd - _signalStart)));
 
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var handle = new JobHandle();
 
         for (int scale = 0; scale < _config.numScales; scale++) {
-            float freq = Scale2Freq(scale, _config);
+            float freq = WUtils.Scale2Freq(scale, _config);
 
             var trsJob = new TransformJob()
-            // var trsJob = new TransformComplexOscJob()
             {
                 // in
                 signal = signalSlice,
                 freq = freq,
-                sr = sr,
+                sr = (int)_samplerate,
                 cfg = _config,
                 tick = (uint)Time.frameCount,
+                primes = _primes,
 
                 // out
                 scaleogram = scaleogramLine,
             };
+            /* Todo: multiply batchCount by inverse of scale, such that
+            the longer the wavelength, the more it is chopped up
+            into smaller batches. Otherwise you end up with
+            bubbles, and waiting workers. */
             handle = trsJob.Schedule(scaleogramLine.Length, 8, handle);
 
             var toTexJob = new CopyRowJob()
@@ -264,17 +293,6 @@ public class WaveletAudioConvolution : MonoBehaviour
             };
             handle = toTexJob.Schedule(scaleogramLine.Length, 32, handle);
         }
-
-        var normJob = new LogScaleNormalizeJob() {
-            tex = tex,
-        };
-        handle = normJob.Schedule(handle);
-
-        var visJob = new VisualizeJob()
-        {
-            tex = tex,
-        };
-        handle = visJob.Schedule(tex.Length, 32, handle);
 
         while (!handle.IsCompleted) {
             yield return new WaitForEndOfFrame();
@@ -291,38 +309,6 @@ public class WaveletAudioConvolution : MonoBehaviour
         _transformRoutine = null;
     }
 
-    private void TestWaveSampling() {
-        float freq = 440f;
-        int sr = _clip.frequency;
-        int smpPerPeriod = (int)math.floor(sr / freq) + 1;
-        int smpPerWave = smpPerPeriod * 2;
-        for (int w = 0; w < smpPerWave; w++) {
-            float waveTime = -1f + (w / (float)smpPerWave) * 2f;
-            Debug.LogFormat("t: {0} -> {1}", waveTime, WUtils.WaveReal(waveTime, freq, _config.cyclesPerWave));
-        }
-    }
-
-    public struct TransformConfig {
-        public float convsPerPixMultiplier;
-
-        public int numPixPerScale;
-        public int numScales;
-        public float lowestScale;
-        public float highestScale;
-        public float scalePowBase;
-
-        public float cyclesPerWave;
-
-        public float _scaleNormalizationFactor;
-
-        public void UpdateDerivedProperties() {
-            /*
-            Todo: this is cute, but note the divide-by-zero when scalePowBase == 1.0
-            */
-            _scaleNormalizationFactor = (1f / (Mathf.Pow(scalePowBase, numScales) - 1f)) * (highestScale - lowestScale);
-        }
-}
-
     [BurstCompile]
     public struct TransformJob : IJobParallelFor {
         [ReadOnly] public NativeSlice<float> signal;
@@ -330,9 +316,10 @@ public class WaveletAudioConvolution : MonoBehaviour
         [ReadOnly] public int sr;
         [ReadOnly] public TransformConfig cfg;
         [ReadOnly] public uint tick;
+        [ReadOnly] public NativeArray<int> primes;
 
         [WriteOnly] public NativeSlice<float> scaleogram;
-        
+
         public void Execute(int p) {
             /*
             Todo:
@@ -350,13 +337,13 @@ public class WaveletAudioConvolution : MonoBehaviour
             will need quadratic. We could max it out at cubic near nyquist.
             */
 
-            Rng rng = new Rng(tick * 0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq*0xCD0445A5u) * 0xE0EB6C25u);
+            Rng rng = new Rng(tick * 0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq * 0xCD0445A5u) * 0xE0EB6C25u);
 
             float nHalf = cfg.cyclesPerWave / 2f;
-            float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
+            float smpPerPix = signal.Length / (float)cfg.texWidth;
             float smpPerPixHalf = (smpPerPix) * 0.5f;
-            float smpPerPeriod = sr / freq;
-            float smpPerWave = smpPerPeriod * cfg.cyclesPerWave;
+            float smpPerCycle = sr / freq;
+            float smpPerWave = smpPerCycle * cfg.cyclesPerWave;
             float smpPerWaveInv = 1f / smpPerWave;
 
             int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
@@ -368,14 +355,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float dotSum = 0f;
 
             for (int c = 0; c < convsPerPix; c++) {
-                float smpStart = p * smpPerPix + c * convStep - 0.5f * smpPerWave + rng.NextFloat(-0.005f, 0.005f) * smpPerPeriod;
-                
-                // Todo: possible precision issues for large values of smpStart, so less precision further out in time...
-                // float smpStart =
-                //     p * smpPerPix
-                //     + 0.5f * smpPerPix
-                //     - 0.5f * smpPerWave
-                //     + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
+                float smpStart = p * smpPerPix + c * convStep - 0.5f * smpPerWave + rng.NextFloat(-0.005f, 0.005f) * smpPerCycle;
 
                 float waveDot = 0f;
                 for (int w = 0; w <= smpPerWave; w++) {
@@ -386,7 +366,7 @@ public class WaveletAudioConvolution : MonoBehaviour
                         continue;
                     }
 
-                    float2 wave = WUtils.WaveComplex(waveTime, freq, cfg.cyclesPerWave);
+                    float2 wave = WUtils.MorletComplex(waveTime, freq, cfg.cyclesPerWave);
                     wave = WUtils.CMul(wave, new float2(signal[signalIdx], 0f));
 
                     waveDot += wave.x;
@@ -399,174 +379,107 @@ public class WaveletAudioConvolution : MonoBehaviour
         }
     }
 
-    [BurstCompile]
-    public struct TransformComplexOscJob : IJobParallelFor {
-        [ReadOnly] public NativeSlice<float> signal;
-        [ReadOnly] public float freq;
-        [ReadOnly] public int sr;
-        [ReadOnly] public TransformConfig cfg;
-        [ReadOnly] public uint tick;
+    // [BurstCompile]
+    // public struct TransformJob : IJobParallelFor {
+    //     [ReadOnly] public NativeSlice<float> signal;
+    //     [ReadOnly] public float freq;
+    //     [ReadOnly] public int sr;
+    //     [ReadOnly] public TransformConfig cfg;
+    //     [ReadOnly] public uint tick;
+    //     [ReadOnly] public NativeArray<int> primes;
 
-        [WriteOnly] public NativeSlice<float> scaleogram;
+    //     [WriteOnly] public NativeSlice<float> scaleogram;
 
-        /*
-        Rewrite of the transform kernel, with different inner loop.
+    //     public void Execute(int p) {
+    //         /*
+    //         Todo:
+    //         - Keep track of highest amplitude found for free normalization
 
-        Realized the accumulator prevents loop vectorization, as it violates
-        parallel execution constraints. So then, if inner loop will run serial,
-        why not optimize calculations for serial use? Deploy a complex oscillator
-        implemented by float 2 and complex multiplies to sequentially generate the
-        sin/cos values needed, without calling math.sin/math.cos outside of init.
+    //         - Interpolated sampling for high frequency content, such that
+    //         we no longer get artifacts due to neighbouring frequencies
+    //         convolving from exactly the same discrete place in sample-space
 
-        Yields a 2x speedup over naive implementation.
+    //         For lowest freqs, various forms of undersampling are fine. This
+    //         is also where currently the most work is situated hands-down,
+    //         as each wave convolution takes maaaany sample multiplies.
 
-        Todo:
-        
-        - can we use an iterative algorithm for generating the Gaussian window?
-            - A logistic map might work
-            - An n-th order polynomial approximation might work too
-        */
+    //         For medium freqs we will need 1st order interpolation, higher
+    //         will need quadratic. We could max it out at cubic near nyquist.
+    //         */
 
-        public void Execute(int p) {
+    //         Rng rng = new Rng(tick * 0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq * 0xCD0445A5u) * 0xE0EB6C25u);
 
-            Rng rng = new Rng(tick * 0x52EAAEBBu + (uint)p * 0x5A9CA13Bu + (uint)(freq * 0xCD0445A5u) * 0xE0EB6C25u);
+    //         float nHalf = cfg.cyclesPerWave / 2f;
+    //         float smpPerPix = signal.Length / (float)cfg.texWidth;
+    //         float smpPerPixHalf = smpPerPix / 2f;
+    //         float smpPerCycle = sr / freq;
+    //         float smpPerWave = smpPerCycle * cfg.cyclesPerWave;
+    //         float smpPerWaveInv = 1f / smpPerWave;
 
-            float nHalf = cfg.cyclesPerWave / 2f;
-            float smpPerPix = signal.Length / (float)cfg.numPixPerScale;
-            float smpPerPixHalf = (smpPerPix) * 0.5f;
-            float smpPerPeriod = sr / freq;
-            float smpPerWave = smpPerPeriod * cfg.cyclesPerWave;
-            float smpPerWaveInv = 1f / smpPerWave;
+    //         float convsPerFreq = freq / (cfg.highestScale - cfg.lowestScale);
+    //         convsPerFreq *= convsPerFreq;
+    //         int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
+    //         float convsPerPixInv = 1f / convsPerPix;
+    //         float convStep = smpPerPix / (float)convsPerPix;
 
-            int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
-            float convsPerPixInv = 1f / convsPerPix;
-            float convStep = smpPerPix / (float)convsPerPix;
+    //         float timeSpanHalf = 1f / freq * nHalf;
 
-            float timeSpan = 1f / freq * nHalf;
+    //         float dotSum = 0f;
 
-            float dotSum = 0f;
+    //         int largestPrimeIdx = largestSafePrime((int)smpPerCycle);
 
-            float phaseStep = timeSpan * 2f * smpPerWaveInv;
-            float2 waveOscStep = WUtils.GetWaveOsc(phaseStep, freq, cfg.cyclesPerWave);
-            float waveStdev = WUtils.WaveStdev(phaseStep, freq, cfg.cyclesPerWave);
-            float2 wave = new float2(1,0);
+    //         for (int c = 0; c < convsPerPix; c++) {
+    //             float smpStart = p * smpPerPix + c * convStep - 0.5f * smpPerWave + rng.NextFloat(-0.005f, 0.005f) * smpPerCycle;
 
-            
+    //             if (smpStart < 0 || smpStart + smpPerWave >= signal.Length) {
+    //                 /* 
+    //                 Todo: we can do partial convolution with available data, and give
+    //                 a probability of this fit being accurate.
 
-            for (int c = 0; c < convsPerPix; c++) {
-                // Todo: possible precision issues for large values of smpStart, so less precision further out in time...
-                float smpStart = 
-                    p * smpPerPix
-                    + 0.5f * smpPerPix
-                    - 0.5f * smpPerWave
-                    + rng.NextFloat(-smpPerPixHalf, smpPerPixHalf) * rng.NextFloat(0f, .5f);
+    //                 Like if we have 75% of the data, we can be fairly confident our
+    //                 predicted part is going to be dead on most of the time.
+    //                 */
+    //                 continue;
+    //             }
 
-                smpStart = math.clamp(smpStart, 0f, signal.Length - smpPerWave);
+    //             float waveDot = 0f;
+    //             float wScale = smpPerWaveInv * (timeSpanHalf * 2f);
+    //             for (int w = 0; w <= smpPerWave; w += primes[w % largestPrimeIdx]) {
+    //                 float waveTime = -timeSpanHalf + w * wScale;
+    //                 int signalIdx = (int)math.clamp((smpStart + w), 0, signal.Length - 1);
 
-                float waveTime = -timeSpan;
-                float waveDot = 0f;
+    //                 float2 wave = WUtils.MorletComplex(waveTime, freq, cfg.cyclesPerWave);
+    //                 wave = WUtils.CMul(wave, new float2(signal[signalIdx], 0f));
+    //                 waveDot += wave.x;
+    //             }
 
-                for (int w = 0; w <= smpPerWave; w++) {
-                    int signalIdx = (int)(smpStart + w);
+    //             dotSum += waveDot;
+    //         }
 
-                    var conv = WUtils.CMul(wave, new float2(signal[signalIdx], 0f)) * WUtils.GaussianEnvelope(waveTime, waveStdev);
-                    waveDot += conv.x;
+    //         scaleogram[p] = dotSum * convsPerPixInv;
+    //     }
 
-                    wave = WUtils.CMul(wave, waveOscStep);
-                    waveTime += phaseStep;
-                }
+    //     private int largestSafePrime(int smpPerCycle) {
+    //         for (int i = 0; i < primes.Length; i++) {
+    //             if (primes[i] >= smpPerCycle) {
+    //                 return math.max(1, i - 2);
+    //             }
+    //         }
 
-                dotSum += math.abs(waveDot) * smpPerWaveInv;
-            }
+    //         return primes.Length;
+    //     }
+    // }
 
-            scaleogram[p] = dotSum * convsPerPixInv;
-        }
-    }
 
     [BurstCompile]
     public struct CopyRowJob : IJobParallelFor {
         [ReadOnly] public NativeArray<float> row;
-        [WriteOnly, NativeDisableParallelForRestriction] public NativeArray<float4> targetTex;
+        [WriteOnly, NativeDisableParallelForRestriction] public NativeArray<float> targetTex;
         [ReadOnly] public int rowIdx;
         [ReadOnly] public TransformConfig cfg;
 
         public void Execute(int i) {
-            targetTex[(rowIdx * cfg.numPixPerScale + i)] = new float4(row[i]);
+            targetTex[(rowIdx * cfg.texWidth + i)] = row[i];
         }
-    }
-
-    [BurstCompile]
-    public struct RunningAverageJob : IJobParallelFor {
-        [ReadOnly] public NativeArray<float> row;
-        [NativeDisableParallelForRestriction] public NativeArray<float4> targetTex;
-        [ReadOnly] public int rowIdx;
-        [ReadOnly] public TransformConfig cfg;
-
-        public void Execute(int i) {
-            targetTex[(rowIdx * cfg.numPixPerScale + i)] = new float4((targetTex[(rowIdx * cfg.numPixPerScale + i)].x + row[i]) / 2f);
-        }
-    }
-
-    [BurstCompile]
-    public struct LogScaleNormalizeJob : IJob {
-        public NativeArray<float4> tex;
-
-        public void Execute() {
-            float max = 0f;
-            for (int i = 0; i < tex.Length; i++) {
-                tex[i] = new float4(math.log10(1f + tex[i].x), 0f, 0f, 0f);
-
-                float mag = math.abs(tex[i].x);
-                if (mag > max) {
-                    max = mag;
-                }
-            }
-
-            float maxInv = 1f / max;
-            for (int i = 0; i < tex.Length; i++) {
-                tex[i] *= maxInv;
-            }
-        }
-    }
-
-    // Todo: perform in shader
-    [BurstCompile]
-    public struct VisualizeJob : IJobParallelFor {
-        public NativeArray<float4> tex;
-        
-        public void Execute(int i) {
-            // tex[i] = new float4(
-            //     tex[i].x,
-            //     0f,
-            //     0f,
-            //     1f);
-
-            // Spread across RGB
-            // tex[i] = new float4(
-            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 3f)),
-            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 2f)),
-            //     math.lerp(1f, 0f, math.abs(tex[i].x * 3f - 1f)),
-            //     1f);
-
-            // tex[i] = new float4(
-            //    math.clamp(tex[i].x * 3f - 2f, 0f, 1f),
-            //    math.clamp(tex[i].x * 3f - 1f, 0f, 1f),
-            //    math.clamp(tex[i].x * 3f - 0f, 0f, 1f),
-            //    1f);
-
-            tex[i] = (Vector4)Color.HSVToRGB(tex[i].x, 1f, math.pow(tex[i].x, 1f));
-        }
-    }
-
-    public static float Scale2Freq(float scale, TransformConfig cfg) {
-        // linear
-        // return math.lerp(1f, 1000f, scale / (float)(_config.numScales-1)); 
-
-        // power law
-        return cfg.lowestScale + (Mathf.Pow(cfg.scalePowBase, scale) - 1f) * cfg._scaleNormalizationFactor;
-    }
-
-    public static float MidiToFreq(int note) {
-        return 27.5f * Mathf.Pow(2f, (note - 21) / 12f);
     }
 }

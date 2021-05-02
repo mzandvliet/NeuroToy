@@ -6,6 +6,27 @@ using Unity.Mathematics;
 using Rng = Unity.Mathematics.Random;
 using System.Runtime.CompilerServices;
 
+public struct TransformConfig {
+    public float convsPerPixMultiplier;
+
+    public int texWidth;
+    public int numScales;
+    public float lowestScale;
+    public float highestScale;
+    public float scalePowBase;
+
+    public float cyclesPerWave;
+
+    public float _scaleNormalizationFactor;
+
+    public void UpdateDerivedProperties() {
+        /*
+        Todo: this is cute, but note the divide-by-zero when scalePowBase == 1.0
+        */
+        _scaleNormalizationFactor = (1f / (Mathf.Pow(scalePowBase, numScales) - 1f)) * (highestScale - lowestScale);
+    }
+}
+
 public static class WUtils {
     /*
     Wavelet design:
@@ -16,39 +37,47 @@ public static class WUtils {
 
     */
 
-    const float twopi = math.PI * 2f;
+    const float tau = math.PI * 2f;
+
+    public static float Scale2Freq(float scale, TransformConfig cfg) {
+        // power law
+        return cfg.lowestScale + (Mathf.Pow(cfg.scalePowBase, scale) - 1f) * cfg._scaleNormalizationFactor;
+    }
+
+    public static float Freq2Scale(float freq, TransformConfig cfg) {
+        // BUG: this doesn't work yet
+        float a = freq / cfg._scaleNormalizationFactor;
+        float b = a - cfg.lowestScale;
+        float c = b + 1f;
+        float d = Mathf.Pow(cfg.scalePowBase, 1f / b);
+        return d;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float WaveReal(float time, float freq, float cyclesPerWave) {
-        float s = WaveStdev(time, freq, cyclesPerWave);
-        float phase = twopi * time * freq;
+    public static float MorletReal(float time, float freq, float cyclesPerWave) {
+        float s = WaveStdev(freq, cyclesPerWave);
+        float phase = tau * time * freq;
         float gaussian = GaussianEnvelope(time, s);
         return math.cos(phase) * gaussian;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float2 WaveComplex(float time, float freq, float cyclesPerWave) {
-        float s = WaveStdev(time, freq, cyclesPerWave);
-        float phase = twopi * time * freq;
-        float gaussian = GaussianEnvelope(time, s);
-        return new float2(
-            math.sin(phase) * gaussian,
-            math.cos(phase) * gaussian
-        );
+    public static float2 MorletComplex(float time, float freq, float cyclesPerWave) {
+        float s = WaveStdev(freq, cyclesPerWave);
+        return GetComplexWave(time, freq) * GaussianEnvelope(time, s);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float2 GetWaveOsc(float timeStep, float freq, float cyclesPerWave) {
-        float phase = twopi * timeStep * freq;
-        return new float2(
-            math.cos(phase),
-            math.sin(phase)
-        );
+    public static float2 GetComplexWave(float time, float freq) {
+        float phase = tau * time * freq;
+        float2 result;
+        math.sincos(phase, out result.y, out result.x);
+        return result;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float WaveStdev(float timeStep, float freq, float cyclesPerWave) {
-        return cyclesPerWave / (twopi * freq);
+    public static float WaveStdev(float freq, float cyclesPerWave) {
+        return cyclesPerWave / (tau * freq);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
