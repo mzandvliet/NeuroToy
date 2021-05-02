@@ -218,9 +218,12 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         if (_source.isPlaying) {
             float nowDrawTime = (float)(((_source.time - timeRange.start) / timeRange.duration) * drawRect.width);
-            float3 nowPos = _camera.transform.position;
-            nowPos.x = nowDrawTime;
-            _camera.transform.position = nowPos;
+            float3 nowPos = new float3(nowDrawTime, 0f, 0f);
+            if (_camera.transform.InverseTransformPoint(nowPos).x > _camera.orthographicSize * 1.5f || _camera.transform.InverseTransformPoint(nowPos).x < -_camera.orthographicSize) {
+                var camPos = _camera.transform.position;
+                camPos.x = nowDrawTime + _camera.orthographicSize;
+                _camera.transform.position = camPos;
+            }
         }
 
         float3 scrollInput = float3.zero;
@@ -265,7 +268,7 @@ public class WaveletAudioConvolution : MonoBehaviour
         var drawRect = new Rect(0f, 0f, 240f * _zoomLevel.x, 10f * _zoomLevel.y);
         var timeRange = new TimeRange(_signalStart, _signalEnd - _signalStart);
 
-        // DrawControls(_camera, drawRect, _config, timeRange);
+        DrawControls(_camera, drawRect, _config, timeRange);
     }
 
     private void DrawControls(Camera cam, Rect area, TransformConfig cfg, TimeRange timeRange) {
