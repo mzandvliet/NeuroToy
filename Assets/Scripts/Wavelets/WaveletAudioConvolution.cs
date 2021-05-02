@@ -176,16 +176,27 @@ public class WaveletAudioConvolution : MonoBehaviour
     private void UpdatePlayback() {
         if (Input.GetKeyDown(KeyCode.Space)) {
             if (_source.isPlaying) {
-                _source.Stop();
+                _source.Pause();
             } else {
-                _source.Stop();
-                _source.time = _signalStart;
                 _source.Play();
             }
         }
 
+        if (Input.GetKeyDown(KeyCode.Backspace)) {
+            _source.Stop();
+            _source.time = _signalStart;
+        }
+
         if (_source.isPlaying && _source.time >= _signalEnd) {
             _source.Stop();
+            _source.time = _signalStart;
+        }
+
+        if (Input.GetKey(KeyCode.A)) {
+            _source.time -= 0.1f;
+        }
+        if (Input.GetKey(KeyCode.D)) {
+            _source.time += 0.1f;
         }
 
         float normalizedTime = (_source.time - _signalStart) / (_signalEnd - _signalStart);
@@ -200,6 +211,16 @@ public class WaveletAudioConvolution : MonoBehaviour
     private void UpdateUI() {
         if (Input.GetKeyDown(KeyCode.Escape)) {
             _showGui = !_showGui;
+        }
+
+        var drawRect = new Rect(0f, 0f, 240f * _zoomLevel.x, 10f * _zoomLevel.y);
+        var timeRange = new TimeRange(_signalStart, _signalEnd - _signalStart);
+
+        if (_source.isPlaying) {
+            float nowDrawTime = (float)(((_source.time - timeRange.start) / timeRange.duration) * drawRect.width);
+            float3 nowPos = _camera.transform.position;
+            nowPos.x = nowDrawTime;
+            _camera.transform.position = nowPos;
         }
 
         float3 scrollInput = float3.zero;
@@ -218,6 +239,17 @@ public class WaveletAudioConvolution : MonoBehaviour
         _smoothZoom = math.lerp(_smoothZoom, zoomInput, Time.deltaTime * 10f);
         _zoomLevel += _smoothZoom;
         _zoomLevel = math.clamp(_zoomLevel, new float2(0.1f, 0.1f), new float2(20f, 50f));
+
+        if (!_source.isPlaying) {
+            var cameraLocalPos = _scaleogramRenderer.transform.InverseTransformPoint(_camera.transform.position);
+            _scaleogramRenderer.transform.localScale = new Vector3(
+                drawRect.width, drawRect.height, 1f
+            );
+            _scaleogramRenderer.transform.position = new Vector3(
+                drawRect.width / 2, drawRect.height / 2, 0f
+            );
+            _camera.transform.position = _scaleogramRenderer.transform.TransformPoint(cameraLocalPos);
+        }
     }
 
     private void OnPreRenderCallback(Camera cam) {
@@ -231,18 +263,9 @@ public class WaveletAudioConvolution : MonoBehaviour
 
         var data = _signal;
         var drawRect = new Rect(0f, 0f, 240f * _zoomLevel.x, 10f * _zoomLevel.y);
-        var timeRange = new TimeRange((long)_signalStart, _signalEnd - _signalStart);
-       
-        DrawControls(_camera, drawRect, _config, timeRange);
+        var timeRange = new TimeRange(_signalStart, _signalEnd - _signalStart);
 
-        var cameraLocalPos = _scaleogramRenderer.transform.InverseTransformPoint(_camera.transform.position);
-        _scaleogramRenderer.transform.localScale = new Vector3(
-            drawRect.width, drawRect.height, 1f
-        );
-        _scaleogramRenderer.transform.position = new Vector3(
-            drawRect.width / 2, drawRect.height / 2, 0f
-        );
-        _camera.transform.position = _scaleogramRenderer.transform.TransformPoint(cameraLocalPos);
+        // DrawControls(_camera, drawRect, _config, timeRange);
     }
 
     private void DrawControls(Camera cam, Rect area, TransformConfig cfg, TimeRange timeRange) {
@@ -439,7 +462,7 @@ public class WaveletAudioConvolution : MonoBehaviour
             float smpPerWave = smpPerCycle * cfg.cyclesPerWave;
             float smpPerWaveInv = 1f / smpPerWave;
 
-            int convsPerPix = 4;//(int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
+            int convsPerPix = (int)math.ceil(((smpPerPix / smpPerWave) * cfg.convsPerPixMultiplier));
             float convsPerPixInv = 1f / convsPerPix;
             float convStep = smpPerPix / (float)convsPerPix;
 
@@ -475,7 +498,7 @@ public class WaveletAudioConvolution : MonoBehaviour
                 dotSum += waveDot;
             }
 
-            scaleogram[p] = dotSum * convsPerPixInv;
+            scaleogram[p] = dotSum; //  * convsPerPixInv
         }
     }
 
